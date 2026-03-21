@@ -1,0 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=Martian+Mono:wght@300;400;500&display=swap');
+
+:root {
+  --bg: #0a0a0a;
+  --surface: #111111;
+  --surface2: #1a1a1a;
+  --border: #222222;
+  --text: #e8e8e8;
+  --text-muted: #666666;
+  --red: #ff3333;
+  --orange: #ff6600;
+  --gold: #ffd700;
+  --purple: #9933ff;
+  --blue: #3399ff;
+  --green: #33ff99;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100%;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* ── Scrollbar ───────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+::selection {
+  background: var(--purple);
+  color: #fff;
+}
+
+/* ── Electron titlebar ───────────────────────── */
+.titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  /* Reserve space for the native window control overlay on the right */
+  padding-right: env(titlebar-area-width, 138px);
+  background: var(--bg);
+  -webkit-app-region: drag;
+  z-index: 9999;
+  pointer-events: none; /* interactive elements inside screens should work normally */
+}
+
+/* Push all screen content below the titlebar */
+.titlebar-offset {
+  padding-top: 36px;
+  min-height: calc(100vh - 36px);
+}

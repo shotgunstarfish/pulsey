@@ -1,0 +1,43 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.text {
+  font-size: clamp(4rem, 15vw, 12rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: center;
+  animation: splashIn 1.5s ease-out forwards;
+  text-shadow: 0 0 40px currentColor, 0 0 80px currentColor;
+}
+
+.red { color: var(--red); }
+.blue { color: var(--blue); }
+.gold { color: var(--gold); }
+.purple { color: var(--purple); }
+
+@keyframes splashIn {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  60% {
+    transform: scale(1.0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.0);
+    opacity: 0;
+  }
+}

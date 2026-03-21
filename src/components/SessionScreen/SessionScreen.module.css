@@ -1,0 +1,356 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 1.5rem;
+  gap: 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.phaseBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.phaseLabel {
+  font-size: clamp(1.8rem, 5vw, 3rem);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  transition: transform 0.12s, filter 0.12s;
+}
+
+.phaseLabelBeat {
+  transform: scale(1.06);
+  filter: brightness(1.3);
+}
+
+.curveTag {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.stats {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.statValue {
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.statLabel {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.eventBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  animation: bannerPulse 1s ease-in-out infinite;
+}
+
+.eventType {
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.1em;
+  color: var(--red);
+}
+
+.eventTimer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text);
+}
+
+@keyframes bannerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.gaugeArea {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  min-height: 0;
+}
+
+.gaugeAreaVideo {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  min-height: 0;
+}
+
+.videoInline {
+  flex: 1;
+  max-width: 60vw;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+.intensityNumber {
+  font-size: clamp(5rem, 20vw, 14rem);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  min-width: 2ch;
+  text-align: center;
+  transition: color 0.3s, transform 0.12s, filter 0.12s;
+}
+
+.intensityNumberBeat {
+  transform: scale(1.08);
+  filter: brightness(1.3);
+}
+
+.gaugeAreaBeat {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+}
+
+.feelingBar {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.feelingBtn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s, background 0.15s, color 0.15s;
+}
+
+.feelingBtn:hover {
+  transform: scale(1.15);
+}
+
+.feelingActive {
+  transform: scale(1.15);
+}
+
+.bottomBar {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  padding-top: 0.5rem;
+}
+
+.stopBtn {
+  padding: 0.7rem 2rem;
+  background: var(--red);
+  color: #000;
+  border: none;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.stopBtn:hover {
+  transform: scale(1.05);
+}
+
+.pauseBtn {
+  padding: 0.7rem 2rem;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.pauseBtn:hover {
+  transform: scale(1.05);
+}
+
+.playlistBtn {
+  padding: 0.7rem 1.5rem;
+  background: var(--surface2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: transform 0.1s, color 0.15s;
+}
+
+.playlistBtn:hover {
+  transform: scale(1.05);
+  color: var(--text);
+}
+
+.viewToggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.viewToggleBtn {
+  padding: 0.3rem 0.6rem;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: none;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.viewToggleActive {
+  background: var(--purple);
+  color: #fff;
+}
+
+.viewToggleBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ── Beat flash overlay ────────────────────────────────── */
+
+.beatFlash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at center, var(--beat-color) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.35s ease-out;
+}
+
+.beatFlashActive {
+  opacity: 0.07;
+  transition: opacity 0s;
+}
+
+/* ── Beat ring on intensity number ─────────────────────── */
+
+@keyframes beatRing {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.beatRing {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  pointer-events: none;
+  animation: none;
+}
+
+.beatRingActive {
+  animation: beatRing 0.4s ease-out forwards;
+}
+
+.intensityWrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Session progress bar ──────────────────────────────── */
+
+.progressBar {
+  height: 2px;
+  background: var(--surface2);
+  border-radius: 1px;
+  overflow: hidden;
+  margin-top: -0.5rem;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 1px;
+  transition: width 0.5s linear;
+}
+
+.progressFillBeat {
+  box-shadow: 0 0 6px 1px var(--progress-color);
+}
+
+/* ── Feeling button beat pulse ─────────────────────────── */
+
+@keyframes feelingPulse {
+  0% { transform: scale(1.15); }
+  50% { transform: scale(1.25); filter: brightness(1.3); }
+  100% { transform: scale(1.15); }
+}
+
+.feelingBeat {
+  animation: feelingPulse 0.15s ease-out;
+}
+
+/* ── Feeling section label ─────────────────────────────── */
+
+.feelingLabel {
+  text-align: center;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+/* ── Bass waveform strip ───────────────────────────────── */
+
+.waveformStrip {
+  padding: 0 0.5rem;
+}

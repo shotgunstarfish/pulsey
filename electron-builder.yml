@@ -1,0 +1,25 @@
+appId: com.aivideoreel.app
+productName: AI Video Reel
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-electron/**/*
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  # Set to true and provide certificate when ready to sign
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: AI Video Reel
+portable:
+  artifactName: "${productName}-${version}-portable.exe"
+asar: true
