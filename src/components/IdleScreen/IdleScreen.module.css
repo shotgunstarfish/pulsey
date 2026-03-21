@@ -1,0 +1,85 @@
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 3rem 4rem;
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+}
+
+.title {
+  font-size: clamp(2.5rem, 8vw, 4rem);
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: var(--text);
+  margin: 0 0 0.5rem;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin: 0 0 2.5rem;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.startBtn {
+  background: var(--red);
+  color: #000;
+  border: none;
+  border-radius: 12px;
+  padding: 1rem 3rem;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.startBtn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px var(--red);
+}
+
+.secondary {
+  display: flex;
+  gap: 2rem;
+}
+
+.linkBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  transition: color 0.15s;
+}
+
+.linkBtn:hover {
+  color: var(--text);
+}
+
+.hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-top: 2rem;
+  opacity: 0.6;
+}

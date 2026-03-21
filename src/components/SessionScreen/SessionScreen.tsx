@@ -1,0 +1,414 @@
+import { useRef } from 'react';
+import type { RefObject } from 'react';
+import type { SessionState, SessionAction, ToyConfig } from '../../engine/sessionMachine.ts';
+import { ALL_PATTERNS, PATTERN_LABELS } from '../../engine/toyPatterns.ts';
+import type { ToyPattern } from '../../engine/toyPatterns.ts';
+import type { PlaylistStore } from '../../hooks/useVideoPlaylist.ts';
+import { hasAnyVideos } from '../../hooks/useVideoPlaylist.ts';
+import { getEventRemainingMs } from '../../engine/randomEvents.ts';
+import { getReleaseChance } from '../../engine/diceRoll.ts';
+import { IntensityBar } from '../IntensityBar/IntensityBar.tsx';
+import { VideoPanel } from '../VideoPanel/VideoPanel.tsx';
+import { EncouragementDisplay } from '../EncouragementDisplay/EncouragementDisplay.tsx';
+import { BassWaveform } from '../BassWaveform/BassWaveform.tsx';
+import { SessionBackground } from '../SessionBackground/SessionBackground.tsx';
+import styles from './SessionScreen.module.css';
+
+interface SessionScreenProps {
+  state: SessionState;
+  send: (action: SessionAction) => void;
+  playlist: PlaylistStore;
+  isBeat: boolean;
+  bassEnergyRef: RefObject<number>;
+  bpm: number;
+  deviceErrors: Record<string, string>;
+  deviceIntensities: Record<string, number>;
+}
+
+const PHASE_COLORS: Record<string, string> = {
+  WARMUP: 'var(--blue)',
+  BUILD: 'var(--orange)',
+  PLATEAU: 'var(--red)',
+  EDGE_CHECK: 'var(--gold)',
+  DECISION: 'var(--gold)',
+  COOLDOWN: 'var(--blue)',
+  RELEASE: 'var(--gold)',
+  PAUSED: 'var(--text-muted)',
+};
+
+function formatTime(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec.toString().padStart(2, '0')}`;
+}
+
+function ModeToggle({ inputMode, onAuto, onBeat }: { inputMode: 'auto' | 'beat'; onAuto: () => void; onBeat: () => void }) {
+  return (
+    <div style={{ display: 'flex', gap: '0.3rem' }}>
+      <button onClick={onAuto} style={{
+        padding: '0.2rem 0.5rem',
+        background: inputMode === 'auto' ? 'var(--blue)' : 'var(--surface)',
+        color: inputMode === 'auto' ? '#000' : 'var(--text-muted)',
+        border: '1px solid var(--border)', borderRadius: '5px',
+        cursor: 'pointer', fontWeight: 600, fontSize: '0.72rem',
+      }}>AUTO</button>
+      <button onClick={onBeat} style={{
+        padding: '0.2rem 0.5rem',
+        background: inputMode === 'beat' ? 'var(--purple)' : 'var(--surface)',
+        color: inputMode === 'beat' ? '#fff' : 'var(--text-muted)',
+        border: '1px solid var(--border)', borderRadius: '5px',
+        cursor: 'pointer', fontWeight: 600, fontSize: '0.72rem',
+      }}>BEAT</button>
+    </div>
+  );
+}
+
+function PatternPicker({ current, onChange }: { current: ToyPattern; onChange: (p: ToyPattern) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+      {ALL_PATTERNS.map(p => (
+        <button
+          key={p}
+          title={PATTERN_LABELS[p]}
+          onClick={() => onChange(p)}
+          style={{
+            padding: '0.15rem 0.35rem',
+            background: current === p ? 'var(--orange)' : 'var(--surface)',
+            color: current === p ? '#000' : 'var(--text-muted)',
+            border: '1px solid var(--border)', borderRadius: '4px',
+            cursor: 'pointer', fontWeight: 600, fontSize: '0.65rem',
+          }}
+        >{PATTERN_LABELS[p].slice(0, 3).toUpperCase()}</button>
+      ))}
+    </div>
+  );
+}
+
+function getPhaseLabel(state: SessionState): string {
+  if (state.phase === 'PAUSED') return 'PAUSED';
+  if (state.phase === 'EDGE_CHECK') return 'EDGE CHECK';
+  if (state.phase === 'DECISION') {
+    return state.releaseRolled ? 'RELEASE!' : 'DENIED';
+  }
+  return state.phase;
+}
+
+/** Phase duration estimates for progress bar (ms) */
+const PHASE_DURATION_ESTIMATE: Record<string, number> = {
+  WARMUP: 30_000,
+  PLATEAU: 30_000,
+  EDGE_CHECK: 15_000,
+  DECISION: 10_000,
+  COOLDOWN: 45_000,
+  RELEASE: 30_000,
+  PAUSED: 60_000,
+};
+
+export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bpm, deviceErrors, deviceIntensities }: SessionScreenProps) {
+  const phaseColor = PHASE_COLORS[state.phase] ?? 'var(--text)';
+  const eventRemaining = state.activeEvent
+    ? getEventRemainingMs(state.activeEvent, state.elapsedMs)
+    : 0;
+  const showVideo = state.viewMode === 'video' && hasAnyVideos(playlist);
+  const isVideoMode = state.viewMode === 'video';
+  const videoAvailable = hasAnyVideos(playlist);
+
+  // Beat key: increments on each rising edge of isBeat to force remount of ring element
+  const beatKeyRef = useRef(0);
+  const prevBeatRef = useRef(false);
+  if (isBeat && !prevBeatRef.current) beatKeyRef.current++;
+  prevBeatRef.current = isBeat;
+
+  // Phase progress: use buildDuration for BUILD, fixed estimates for others
+  const phaseDuration = state.phase === 'BUILD'
+    ? state.buildDuration
+    : (PHASE_DURATION_ESTIMATE[state.phase] ?? 60_000);
+  const progressPct = Math.min(100, (state.phaseElapsedMs / phaseDuration) * 100);
+
+  return (
+    <div className={styles.container}>
+      <SessionBackground
+        phaseColor={phaseColor}
+        isBeat={isBeat}
+        intensity={state.intensity}
+      />
+      <div style={{ position: 'relative', zIndex: 1, display: 'contents' }}>
+        {/* Beat flash overlay */}
+        <div
+          className={`${styles.beatFlash} ${isBeat ? styles.beatFlashActive : ''}`}
+          style={{ '--beat-color': phaseColor } as React.CSSProperties}
+        />
+
+        {/* Top bar */}
+        <div className={styles.topBar}>
+          <div className={styles.phaseBlock}>
+            <span className={`${styles.phaseLabel}${isBeat ? ` ${styles.phaseLabelBeat}` : ''}`} style={{ color: phaseColor }}>
+              {getPhaseLabel(state)}
+            </span>
+            {state.phase === 'BUILD' && <span className={styles.curveTag}>{state.currentCurve}</span>}
+          </div>
+          <div className={styles.stats}>
+            {/* View mode toggle */}
+            <div className={styles.viewToggle}>
+              <button
+                className={`${styles.viewToggleBtn} ${!isVideoMode ? styles.viewToggleActive : ''}`}
+                onClick={() => send({ type: 'SET_VIEW_MODE', mode: 'text' })}
+              >
+                TEXT
+              </button>
+              <button
+                className={`${styles.viewToggleBtn} ${isVideoMode ? styles.viewToggleActive : ''}`}
+                onClick={() => videoAvailable && send({ type: 'SET_VIEW_MODE', mode: 'video' })}
+                disabled={!videoAvailable}
+                title={!videoAvailable ? 'Add videos in Playlist to enable' : undefined}
+              >
+                VIDEO
+              </button>
+            </div>
+            <div className={styles.stat}>
+              <span className={styles.statValue}>{state.edgeCount}</span>
+              <span className={styles.statLabel}>edges</span>
+            </div>
+            <div className={styles.stat}>
+              <span className={styles.statValue}>{formatTime(state.elapsedMs)}</span>
+              <span className={styles.statLabel}>time</span>
+            </div>
+            <div className={styles.stat}>
+              <span className={styles.statValue}>{Math.round(getReleaseChance(state.edgeCount) * 100)}%</span>
+              <span className={styles.statLabel}>release</span>
+            </div>
+            {bpm > 0 && (
+              <div className={styles.stat}>
+                <span className={styles.statValue}>{bpm}</span>
+                <span className={styles.statLabel}>bpm</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Phase progress bar */}
+        <div className={styles.progressBar}>
+          <div
+            className={`${styles.progressFill} ${isBeat ? styles.progressFillBeat : ''}`}
+            style={{
+              width: `${progressPct}%`,
+              background: phaseColor,
+              '--progress-color': phaseColor,
+            } as React.CSSProperties}
+          />
+        </div>
+
+        {/* Event banner */}
+        {state.activeEvent && (
+          <div className={styles.eventBanner}>
+            <span className={styles.eventType}>
+              {state.activeEvent.type === 'INTENSITY_SPIKE' && 'INTENSITY SPIKE'}
+              {state.activeEvent.type === 'FORCED_PAUSE' && 'FORCED PAUSE'}
+              {state.activeEvent.type === 'HOLD_CHALLENGE' && 'HOLD CHALLENGE'}
+            </span>
+            <span className={styles.eventTimer}>
+              {Math.ceil(eventRemaining / 1000)}s
+            </span>
+          </div>
+        )}
+
+        {/* Center: intensity gauge (+ video inline when in video mode) */}
+        <div className={`${showVideo ? styles.gaugeAreaVideo : styles.gaugeArea}${isBeat ? ` ${styles.gaugeAreaBeat}` : ''}`}>
+          <IntensityBar intensity={state.intensity} isBeat={isBeat} />
+          <div className={styles.intensityWrapper}>
+            <div
+              key={beatKeyRef.current}
+              className={`${styles.beatRing} ${isBeat ? styles.beatRingActive : ''}`}
+              style={{ color: phaseColor }}
+            />
+            <div
+              className={`${styles.intensityNumber}${isBeat ? ` ${styles.intensityNumberBeat}` : ''}`}
+              style={{ color: phaseColor }}
+            >
+              {state.intensity}
+            </div>
+          </div>
+          {/* Always keep VideoPanel mounted so video resumes from last position */}
+          {videoAvailable && (
+            <div className={styles.videoInline} style={showVideo ? undefined : { display: 'none' }}>
+              <VideoPanel
+                playlist={playlist}
+                phase={state.phase}
+                intensity={state.intensity}
+                isBeat={isBeat}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Bass energy waveform strip */}
+        <div className={styles.waveformStrip}>
+          <BassWaveform
+            bassEnergyRef={bassEnergyRef}
+            phaseColor={phaseColor}
+            isBeat={isBeat}
+          />
+        </div>
+
+        {/* Encouragement text */}
+        <EncouragementDisplay
+          phase={state.phase}
+          intensity={state.intensity}
+          feelingLevel={state.feelingLevel}
+          lastSplashId={state.splash?.id ?? null}
+          isBeat={isBeat}
+          paused={state.paused}
+        />
+
+        {/* Per-device/toy panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0 0.5rem' }}>
+          {state.devices.flatMap(slot => {
+            const rowStyle = {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              padding: '0.5rem 0.75rem',
+              background: 'var(--surface2)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              fontSize: '0.8rem',
+            };
+            if (slot.mode === 'mock') {
+              if (!slot.enabled) return [];
+              // Hub-level row for mock
+              return [
+                <div key={slot.id} style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ color: 'var(--text-muted)', minWidth: '5rem', fontWeight: 600 }}>
+                      {slot.label}
+                    </span>
+                    <span style={{ fontWeight: 700, color: phaseColor, minWidth: '2rem', textAlign: 'right' }}>
+                      {deviceIntensities[slot.id] ?? 0}
+                    </span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginLeft: 'auto' }}>
+                      {PATTERN_LABELS[slot.pattern]}
+                    </span>
+                    <ModeToggle
+                      inputMode={slot.inputMode}
+                      onAuto={() => send({ type: 'SET_INPUT_MODE', deviceId: slot.id, inputMode: 'auto' })}
+                      onBeat={() => send({ type: 'SET_INPUT_MODE', deviceId: slot.id, inputMode: 'beat' })}
+                    />
+                  </div>
+                  <PatternPicker current={slot.pattern} onChange={p => send({ type: 'UPDATE_DEVICE', id: slot.id, patch: { pattern: p } })} />
+                </div>,
+              ];
+            }
+
+            // Lovense: one row per enabled toy, or nothing if all disabled/absent
+            const enabledToys = slot.toyConfigs.filter(tc => tc.enabled);
+            if (slot.toyConfigs.length === 0 || enabledToys.length === 0) {
+              return [
+                <div key={slot.id} style={rowStyle}>
+                  <span style={{ color: 'var(--text-muted)', minWidth: '5rem', fontWeight: 600 }}>
+                    {slot.label}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>No toys</span>
+                </div>,
+              ];
+            }
+
+            return enabledToys.map((tc: ToyConfig) => {
+              const key = `${slot.id}:${tc.toy.id}`;
+              return (
+                <div key={key} style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    {/* Status dot */}
+                    <span style={{
+                      width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
+                      background: tc.toy.status === 1 ? 'var(--green)' : 'var(--text-muted)',
+                    }} />
+                    <span style={{ color: 'var(--text-muted)', flex: 1, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {tc.toy.nickName || tc.toy.name || tc.toy.type}
+                    </span>
+                    <span style={{ fontWeight: 700, color: phaseColor, minWidth: '2rem', textAlign: 'right' }}>
+                      {deviceIntensities[key] ?? 0}
+                    </span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                      🔋{tc.toy.battery}%
+                    </span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                      {PATTERN_LABELS[tc.pattern]}
+                    </span>
+                    <ModeToggle
+                      inputMode={tc.inputMode}
+                      onAuto={() => send({ type: 'UPDATE_TOY_CONFIG', deviceId: slot.id, toyId: tc.toy.id, patch: { inputMode: 'auto' } })}
+                      onBeat={() => send({ type: 'UPDATE_TOY_CONFIG', deviceId: slot.id, toyId: tc.toy.id, patch: { inputMode: 'beat' } })}
+                    />
+                  </div>
+                  <PatternPicker current={tc.pattern} onChange={p => send({ type: 'UPDATE_TOY_CONFIG', deviceId: slot.id, toyId: tc.toy.id, patch: { pattern: p } })} />
+                </div>
+              );
+            });
+          })}
+        </div>
+
+        {/* Feeling buttons */}
+        <div className={styles.feelingLabel}>How close are you?</div>
+        <div className={styles.feelingBar}>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+            <button
+              key={n}
+              className={`${styles.feelingBtn} ${state.feelingLevel === n ? styles.feelingActive : ''} ${state.feelingLevel === n && isBeat ? styles.feelingBeat : ''}`}
+              onClick={() => send({ type: 'REPORT_FEELING', level: n })}
+              style={{
+                borderColor: n <= 3 ? 'var(--green)' : n <= 6 ? 'var(--orange)' : n <= 8 ? 'var(--red)' : 'var(--gold)',
+                ...(state.feelingLevel === n ? {
+                  background: n <= 3 ? 'var(--green)' : n <= 6 ? 'var(--orange)' : n <= 8 ? 'var(--red)' : 'var(--gold)',
+                  color: '#000',
+                } : {}),
+              }}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+
+        {/* Device error banner */}
+        {Object.entries(deviceErrors).map(([id, msg]) => {
+          const slot = state.devices.find(d => d.id === id);
+          return (
+            <div key={id} style={{
+              padding: '0.4rem 1rem',
+              background: 'rgba(255,60,60,0.15)',
+              border: '1px solid var(--red)',
+              borderRadius: '8px',
+              fontSize: '0.75rem',
+              color: 'var(--red)',
+              textAlign: 'center',
+            }}>
+              ⚠ {slot?.label ?? id}: {msg}
+            </div>
+          );
+        })}
+
+        {/* Bottom controls */}
+        <div className={styles.bottomBar}>
+          <button
+            className={styles.stopBtn}
+            onClick={() => send({ type: 'EMERGENCY_STOP' })}
+          >
+            STOP (0)
+          </button>
+          <button
+            className={styles.pauseBtn}
+            onClick={() => state.paused ? send({ type: 'RESUME' }) : send({ type: 'PAUSE' })}
+          >
+            {state.paused ? 'RESUME' : 'PAUSE'} (Space)
+          </button>
+          <button
+            className={styles.playlistBtn}
+            onClick={() => send({ type: 'GO_PLAYLIST' })}
+          >
+            Playlist
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

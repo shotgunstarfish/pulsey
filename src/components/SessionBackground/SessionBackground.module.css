@@ -1,0 +1,132 @@
+/* Root: fills container absolutely, behind all content */
+.root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+/* ── Dot grid ─────────────────────────────────────────── */
+
+.dotGrid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    rgba(var(--grid-rgb), 0.05) 1px,
+    transparent 1px
+  );
+  background-size: 28px 28px;
+}
+
+/* ── Breathing orbs ───────────────────────────────────── */
+
+.orb1,
+.orb2,
+.orb3 {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform, opacity;
+}
+
+.orb1 {
+  width: 70%;
+  aspect-ratio: 1;
+  left: -25%;
+  top: -35%;
+  animation: breathe1 11s ease-in-out infinite;
+}
+
+.orb2 {
+  width: 60%;
+  aspect-ratio: 1;
+  right: -20%;
+  top: 15%;
+  animation: breathe2 13s ease-in-out infinite;
+}
+
+.orb3 {
+  width: 55%;
+  aspect-ratio: 1;
+  left: 15%;
+  bottom: -30%;
+  animation: breathe3 9s ease-in-out infinite;
+}
+
+@keyframes breathe1 {
+  0%   { transform: translate(0,    0)    scale(1);    opacity: 1; }
+  25%  { transform: translate(4%,  -3%)   scale(1.08); opacity: 0.85; }
+  50%  { transform: translate(2%,   4%)   scale(1.15); opacity: 1; }
+  75%  { transform: translate(-3%,  2%)   scale(1.05); opacity: 0.9; }
+  100% { transform: translate(0,    0)    scale(1);    opacity: 1; }
+}
+
+@keyframes breathe2 {
+  0%   { transform: translate(0,   0)    scale(1.05); opacity: 0.9; }
+  33%  { transform: translate(-4%, 3%)   scale(0.92); opacity: 1; }
+  66%  { transform: translate(3%, -4%)   scale(1.1);  opacity: 0.85; }
+  100% { transform: translate(0,   0)    scale(1.05); opacity: 0.9; }
+}
+
+@keyframes breathe3 {
+  0%   { transform: translate(0,    0)    scale(1);    opacity: 0.95; }
+  40%  { transform: translate(3%,  -2%)   scale(1.12); opacity: 1; }
+  70%  { transform: translate(-2%,  3%)   scale(0.93); opacity: 0.85; }
+  100% { transform: translate(0,    0)    scale(1);    opacity: 0.95; }
+}
+
+/* ── Beat ring ────────────────────────────────────────── */
+
+.beatRing {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 120px;
+  height: 120px;
+  margin-left: -60px;
+  margin-top: -60px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--ring-rgb), 0.4);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.beatRingFire {
+  animation: ringExpand 0.7s ease-out forwards;
+}
+
+@keyframes ringExpand {
+  0%   { transform: scale(0.6); opacity: 0.5; }
+  60%  { opacity: 0.2; }
+  100% { transform: scale(4.5); opacity: 0; }
+}
+
+/* ── Floating dots ────────────────────────────────────── */
+
+.dot {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(var(--dot-rgb), 0.18);
+  transform: translate(-50%, -50%);
+  animation: dotBreathe var(--breath-dur) ease-in-out var(--breath-delay) infinite;
+  will-change: opacity, transform;
+}
+
+@keyframes dotBreathe {
+  0%   { opacity: 0.12; transform: translate(-50%, -50%) scale(1); }
+  50%  { opacity: 0.28; transform: translate(-50%, -50%) scale(1.6); }
+  100% { opacity: 0.12; transform: translate(-50%, -50%) scale(1); }
+}
+
+.dotBeat {
+  animation:
+    dotBreathe var(--breath-dur) ease-in-out var(--breath-delay) infinite,
+    dotPulse 0.35s ease-out var(--wave-delay) forwards;
+}
+
+@keyframes dotPulse {
+  0%   { opacity: 0.7; transform: translate(-50%, -50%) scale(2.5); }
+  100% { opacity: 0.12; transform: translate(-50%, -50%) scale(1); }
+}

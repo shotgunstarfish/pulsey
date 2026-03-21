@@ -1,0 +1,73 @@
+/** Intensity curve functions — all pure, return 0-20 integer */
+
+function clampIntensity(value: number): number {
+  return Math.max(0, Math.min(20, Math.round(value)));
+}
+
+/**
+ * Sine ramp: oscillating intensity that rises over time.
+ * 4 full oscillations across the duration, floor rises with progress.
+ */
+export function sineRamp(
+  elapsedMs: number,
+  durationMs: number,
+  floor: number,
+  ceiling: number,
+): number {
+  const progress = Math.min(1, elapsedMs / durationMs);
+  const currentFloor = floor + (ceiling - floor) * progress * 0.5;
+  const amplitude = (ceiling - currentFloor) * 0.5;
+  const oscillation = Math.sin(progress * 4 * 2 * Math.PI);
+  // Clamp to floor so oscillation dips never send intensity below the phase minimum
+  return clampIntensity(Math.max(floor, currentFloor + oscillation * amplitude));
+}
+
+/**
+ * Linear ramp: straight line from floor to ceiling.
+ */
+export function linearRamp(
+  elapsedMs: number,
+  durationMs: number,
+  floor: number,
+  ceiling: number,
+): number {
+  const progress = Math.min(1, elapsedMs / durationMs);
+  return clampIntensity(floor + (ceiling - floor) * progress);
+}
+
+/**
+ * Pulse train: alternates between ceiling and floor.
+ * Frequency increases with progress, duty cycle rises with progress.
+ */
+export function pulseTrain(
+  elapsedMs: number,
+  durationMs: number,
+  floor: number,
+  ceiling: number,
+): number {
+  const progress = Math.min(1, elapsedMs / durationMs);
+  // Frequency increases from 0.5 Hz to 4 Hz over duration
+  const frequency = 0.5 + progress * 3.5;
+  const dutyCycle = 0.3 + progress * 0.5; // 30% → 80%
+  const cyclePosition = (elapsedMs / 1000 * frequency) % 1;
+  return clampIntensity(cyclePosition < dutyCycle ? ceiling : floor);
+}
+
+export type CurveType = 'sine' | 'linear' | 'pulse';
+
+export function computeIntensity(
+  curve: CurveType,
+  elapsedMs: number,
+  durationMs: number,
+  floor: number,
+  ceiling: number,
+): number {
+  switch (curve) {
+    case 'sine':
+      return sineRamp(elapsedMs, durationMs, floor, ceiling);
+    case 'linear':
+      return linearRamp(elapsedMs, durationMs, floor, ceiling);
+    case 'pulse':
+      return pulseTrain(elapsedMs, durationMs, floor, ceiling);
+  }
+}
