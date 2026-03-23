@@ -1,7 +1,7 @@
 /** useReducer state machine — pure, no DOM/device refs */
 
 import type { CurveType } from './intensityCurves.ts';
-import { computeIntensity } from './intensityCurves.ts';
+import { computeIntensity, cooldownPulseRaw } from './intensityCurves.ts';
 import type { ToyPattern } from './toyPatterns.ts';
 export type { ToyPattern };
 import { defaultPatternForToyType } from './toyPatterns.ts';
@@ -511,7 +511,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
           ...state,
           phase: 'COOLDOWN',
           phaseElapsedMs: 0,
-          intensity: 2,
+          intensity: 3,
           buildFloor: Math.min(state.buildFloor + 1, 12),
           buildDuration: Math.max(20_000, state.buildDuration * 0.9),
           cooldownDuration: state.edgeCount > 3
@@ -533,7 +533,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         ...state,
         phase: 'COOLDOWN',
         phaseElapsedMs: 0,
-        intensity: 2,
+        intensity: 5,
         buildFloor: Math.min(state.buildFloor + 1, 12),
         buildDuration: Math.max(20_000, state.buildDuration * 0.9),
         cooldownDuration: state.edgeCount > 3
@@ -823,7 +823,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
               elapsedMs: newElapsed,
               phaseElapsedMs: 0,
               phase: 'COOLDOWN',
-              intensity: 2,
+              intensity: 3,
               buildFloor: Math.min(state.buildFloor + 1, 12),
               buildDuration: Math.max(20_000, state.buildDuration * 0.9),
               cooldownDuration: state.edgeCount > 3
@@ -845,8 +845,8 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
               intensity: state.buildFloor,
             };
           }
-          // Low gentle intensity during cooldown
-          const cdIntensity = computeIntensity('sine', newPhaseElapsed, state.cooldownDuration, 1, 4);
+          // Varied recovery pulses — dual-frequency wave between 1 and 6
+          const cdIntensity = Math.round(cooldownPulseRaw(newPhaseElapsed, state.cooldownDuration));
           return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed, intensity: cdIntensity };
         }
 
