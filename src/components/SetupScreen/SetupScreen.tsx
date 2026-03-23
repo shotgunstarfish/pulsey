@@ -479,7 +479,8 @@ export function SetupScreen({ state, send }: SetupScreenProps) {
       display: 'flex',
       alignItems: 'flex-start',
       justifyContent: 'center',
-      minHeight: '100vh',
+      height: '100%',
+      overflowY: 'auto',
       padding: '2rem',
     }}>
       <div style={{

@@ -204,7 +204,9 @@ function CategoryColumn({
             </ul>
           )}
         </div>
+      </div>
 
+      <div className={styles.columnActions}>
         <button className={styles.addBtn} onClick={() => inputRef.current?.click()}>
           + Add Videos
         </button>
@@ -216,15 +218,12 @@ function CategoryColumn({
           multiple
           onChange={handleFileInput}
         />
-      </div>
-
-      {entries.length > 0 && (
-        <div className={styles.columnActions}>
+        {entries.length > 0 && (
           <button className={styles.clearBtn} onClick={() => clearCategory(category)}>
             Clear
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
