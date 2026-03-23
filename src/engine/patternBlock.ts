@@ -10,7 +10,7 @@
 import type { Phase } from './sessionMachine.ts';
 import type { CurveType } from './intensityCurves.ts';
 import type { ToyPattern } from './toyPatterns.ts';
-import { computeIntensityRaw } from './intensityCurves.ts';
+import { computeIntensityRaw, cooldownPulseRaw } from './intensityCurves.ts';
 import { applyPatternRaw } from './toyPatterns.ts';
 import type { RandomEventType } from './randomEvents.ts';
 
@@ -81,7 +81,7 @@ function computePhaseIntensityRaw(params: BlockGenParams, phaseElapsed: number):
       return computeIntensityRaw('sine', phaseElapsed % PLATEAU_OSCILLATION_PERIOD, PLATEAU_OSCILLATION_PERIOD, 15, BUILD_CEILING);
 
     case 'COOLDOWN':
-      return computeIntensityRaw('sine', phaseElapsed, params.cooldownDuration, 1, 4);
+      return cooldownPulseRaw(phaseElapsed, params.cooldownDuration);
 
     case 'RELEASE': {
       const halfway = RELEASE_DURATION / 2;

@@ -53,6 +53,19 @@ export function pulseTrain(
   return clampIntensity(cyclePosition < dutyCycle ? ceiling : floor);
 }
 
+/**
+ * Cooldown recovery pulse: two non-harmonic sine waves whose interference
+ * creates naturally varied peaks between 1 and 6. Some pulses peak at 2-3,
+ * others reach 5-6 — giving a living, breathing recovery feel.
+ * Returns a float in [1, 6] for use with patternBlock (raw) or Math.round() for display.
+ */
+export function cooldownPulseRaw(elapsedMs: number, durationMs: number): number {
+  const t = Math.min(1, elapsedMs / Math.max(1, durationMs));
+  const primary   = 2.0 * Math.sin(t * 3.0 * 2 * Math.PI);
+  const secondary = 1.5 * Math.sin(t * 4.7 * 2 * Math.PI);
+  return Math.max(1, Math.min(6, 3 + primary + secondary));
+}
+
 export type CurveType = 'sine' | 'linear' | 'pulse';
 
 export function computeIntensity(
