@@ -5,6 +5,9 @@ import type { DeviceController } from './DeviceController.ts';
 export class MockDevice implements DeviceController {
   private connected = false;
 
+  /** Mock device uses the 50ms ticker path — no PatternV2 */
+  readonly supportsPatternV2 = false;
+
   async connect(): Promise<void> {
     await this.simulateLatency();
     this.connected = true;

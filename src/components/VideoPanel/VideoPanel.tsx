@@ -56,6 +56,7 @@ const BADGE_LABELS: Record<VideoCategory, string> = {
 };
 
 export function VideoPanel({ playlist, phase, intensity, isBeat = false }: VideoPanelProps) {
+  const [fitContain, setFitContain] = useState(false);
   const rawCategory = getCategoryForSession(phase, intensity);
 
   // Debounce category changes so rapid intensity oscillation doesn't cause constant cuts
@@ -182,9 +183,13 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
     [activeSlot, currentCategory, advanceIndex, getVideoUrl],
   );
 
+  const wrapperClass = `${styles.wrapper}${isBeat ? ` ${styles.wrapperBeat}` : ''}`;
+  const videoClass = (slot: 0 | 1) =>
+    `${styles.video}${fitContain ? ` ${styles.videoContain}` : ''} ${activeSlot === slot ? styles.videoVisible : styles.videoHidden}`;
+
   if (categoryVideos.length === 0) {
     return (
-      <div className={`${styles.wrapper}${isBeat ? ` ${styles.wrapperBeat}` : ''}`} data-category={currentCategory}>
+      <div className={wrapperClass} data-category={currentCategory}>
         <span className={styles.badge} data-category={currentCategory}>
           {BADGE_LABELS[currentCategory]}
         </span>
@@ -196,13 +201,13 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
   }
 
   return (
-    <div className={`${styles.wrapper}${isBeat ? ` ${styles.wrapperBeat}` : ''}`} data-category={currentCategory}>
+    <div className={wrapperClass} data-category={currentCategory}>
       <span className={styles.badge} data-category={currentCategory}>
         {BADGE_LABELS[currentCategory]}
       </span>
       <video
         ref={videoRefs[0]}
-        className={`${styles.video} ${activeSlot === 0 ? styles.videoVisible : styles.videoHidden}`}
+        className={videoClass(0)}
         autoPlay
         muted
         playsInline
@@ -210,12 +215,19 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
       />
       <video
         ref={videoRefs[1]}
-        className={`${styles.video} ${activeSlot === 1 ? styles.videoVisible : styles.videoHidden}`}
+        className={videoClass(1)}
         autoPlay
         muted
         playsInline
         onEnded={() => handleEnded(1)}
       />
+      <button
+        className={styles.fitToggle}
+        onClick={() => setFitContain(f => !f)}
+        title={fitContain ? 'Switch to fill (crop)' : 'Switch to fit (show all)'}
+      >
+        {fitContain ? 'CROP' : 'FIT'}
+      </button>
     </div>
   );
 }

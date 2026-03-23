@@ -1,4 +1,4 @@
-/** Wires reducer + device + intensity loop + random events */
+/** Wires reducer + device + intensity loop + PatternV2 block scheduler */
 
 import { useReducer, useRef, useEffect, useCallback, useState } from 'react';
 import { sessionReducer, initialState } from '../engine/sessionMachine.ts';
@@ -8,6 +8,13 @@ import { saveSession } from '../engine/sessionHistory.ts';
 import type { DeviceController } from '../devices/DeviceController.ts';
 import { MockDevice } from '../devices/MockDevice.ts';
 import { LovenseDevice } from '../devices/LovenseDevice.ts';
+import {
+  generateBlock,
+  interpolateBlockAt,
+  posToIntensity,
+  PATTERN_BLOCK_DURATION,
+} from '../engine/patternBlock.ts';
+import type { PatternBlock, BlockGenParams } from '../engine/patternBlock.ts';
 
 const DEVICE_CONFIG_KEY = 'ai-video-reel:devices';
 
@@ -81,28 +88,51 @@ function isSessionPhase(phase: Phase): boolean {
   return ['WARMUP', 'BUILD', 'PLATEAU', 'EDGE_CHECK', 'DECISION', 'COOLDOWN', 'RELEASE'].includes(phase);
 }
 
+/** Phases long enough to benefit from PatternV2 pre-computed blocks (≥10s) */
+function shouldUsePatternV2Phase(phase: Phase): boolean {
+  return phase === 'WARMUP' || phase === 'BUILD' || phase === 'PLATEAU'
+    || phase === 'COOLDOWN' || phase === 'RELEASE';
+}
+
 /** Serialize a slot's connection-relevant fields for dep comparison */
 function slotKey(slot: DeviceSlot): string {
   return `${slot.id}|${slot.mode}|${slot.lovenseConfig?.domain ?? ''}|${slot.lovenseConfig?.port ?? ''}|${slot.lovenseConfig?.ssl ?? false}`;
 }
 
-export function useSessionEngine(isBeat: boolean = false) {
+interface BlockSchedule {
+  current: PatternBlock | null;
+  next: PatternBlock | null;
+  /** performance.now() when Play was sent (optimistic — device lags by ~40ms) */
+  startedAt: number;
+  /** true while sendPatternBlock is in-flight — prevents double-send */
+  sending: boolean;
+}
+
+export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
   const [state, dispatch] = useReducer(sessionReducer, undefined, getInitialState);
   const devicesRef = useRef<Map<string, DeviceController>>(new Map());
   const rafRef = useRef<number>(0);
   const lastTickRef = useRef<number>(0);
   const beatIntensityRef = useRef<Map<string, number>>(new Map());
+  const bpmRef = useRef(bpm);
+  bpmRef.current = bpm;
 
   /**
-   * Desired vibration level per device/toy key.
-   * The RAF loop writes here every frame; the 50ms send ticker reads and sends.
-   * This decouples intensity computation from API calls — no spam, no gaps.
+   * Desired vibration level per device/toy key (0-20).
+   * Written by: PatternV2 block scheduler (interpolated) OR RAF auto-mode section.
+   * Read by: 50ms ticker (mock + PatternV2 fallback), deviceIntensities display.
    */
   const desiredLevelRef = useRef<Map<string, number>>(new Map());
-  /** Last value actually sent per key + timestamp — avoids re-sending the same level every 50ms */
+  /** Last value actually sent per key + timestamp — avoids re-sending the same level */
   const lastSentRef = useRef<Map<string, { level: number; time: number }>>(new Map());
-  const KEEPALIVE_MS = 5_000;  // re-sync after device reset (timeSec:0 = indefinite, but reconnects need a nudge)
-  const MIN_SEND_MS  = 100;    // hard rate gate — prevents 10/11/10/11 oscillation spam
+  const KEEPALIVE_MS = 5_000;
+  const MIN_SEND_MS  = 100;
+
+  /**
+   * PatternV2 block schedule per toy key.
+   * Only populated for Lovense devices with supportsPatternV2 === true.
+   */
+  const blockScheduleRef = useRef<Map<string, BlockSchedule>>(new Map());
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -179,6 +209,10 @@ export function useSessionEngine(isBeat: boolean = false) {
       if (needsRebuild) {
         if (existing) {
           existing.disconnect();
+          // Clear block schedules for toys in this slot
+          for (const [key] of blockScheduleRef.current.entries()) {
+            if (parseKey(key).slotId === slot.id) blockScheduleRef.current.delete(key);
+          }
         }
 
         let controller: DeviceController;
@@ -215,20 +249,49 @@ export function useSessionEngine(isBeat: boolean = false) {
     saveDevices(state.devices);
   }, [state.devices]);
 
-  // Stop all devices on IDLE and clear desired levels
+  // Phase change cleanup — stop PatternV2 patterns on short phases, PAUSED, and IDLE
   useEffect(() => {
-    if (state.phase === 'IDLE') {
+    const phase = state.phase;
+
+    // Short phases (EDGE_CHECK, DECISION): stop PatternV2, let ticker handle
+    if (isSessionPhase(phase) && !shouldUsePatternV2Phase(phase)) {
+      for (const [key, schedule] of blockScheduleRef.current.entries()) {
+        if (schedule.current) {
+          const { slotId, toyId } = parseKey(key);
+          const controller = devicesRef.current.get(slotId);
+          controller?.stopPattern?.(toyId).catch(() => {});
+        }
+      }
+      blockScheduleRef.current.clear();
+    }
+
+    // Pause: stop all PatternV2 patterns
+    if (phase === 'PAUSED') {
+      for (const [key, schedule] of blockScheduleRef.current.entries()) {
+        if (schedule.current) {
+          const { slotId, toyId } = parseKey(key);
+          const controller = devicesRef.current.get(slotId);
+          controller?.stopPattern?.(toyId).catch(() => {});
+        }
+      }
+      blockScheduleRef.current.clear();
+    }
+
+    // IDLE: stop everything
+    if (phase === 'IDLE') {
       desiredLevelRef.current.clear();
+      blockScheduleRef.current.clear();
       for (const controller of devicesRef.current.values()) {
+        controller.stopPattern?.().catch(() => {});
         controller.stop().catch(() => {});
       }
     }
   }, [state.phase]);
 
   // ── 50ms send ticker ─────────────────────────────────────────────────────────
-  // Reads desiredLevelRef and sends to all devices at a fixed 50ms cadence.
-  // This is the ONLY place vibrate() is called during a session — decoupled from
-  // the RAF intensity computation so the API never gets spammed.
+  // Sends to mock devices (and PatternV2 fallbacks) at a fixed 50ms cadence.
+  // PatternV2 Lovense devices with active block schedules are SKIPPED here —
+  // their output is driven by the firmware executing the pre-sent pattern.
   useEffect(() => {
     const interval = setInterval(() => {
       const s = stateRef.current;
@@ -272,6 +335,11 @@ export function useSessionEngine(isBeat: boolean = false) {
           for (const tc of slot.toyConfigs) {
             if (!tc.enabled) continue;
             const key = toyKey(slot.id, tc.toy.id);
+
+            // Skip toys with an active PatternV2 block schedule — firmware drives them
+            if (controller.supportsPatternV2 && blockScheduleRef.current.has(key)
+                && shouldUsePatternV2Phase(s.phase)) continue;
+
             const level = desired.get(key) ?? 0;
             maybeSend(key, level, () =>
               controller.vibrate(level, tc.toy.id)
@@ -289,8 +357,9 @@ export function useSessionEngine(isBeat: boolean = false) {
   }, []); // stable — runs for entire component lifetime
 
   // ── rAF tick loop ─────────────────────────────────────────────────────────────
-  // Dispatches TICK for state machine timing and writes desired levels to
-  // desiredLevelRef. Does NOT call vibrate() — that's the 50ms ticker's job.
+  // 1. Dispatches TICK for state machine timing (phase transitions, display).
+  // 2. For Lovense devices: manages PatternV2 block lifecycle, writes display values.
+  // 3. For mock devices: writes desired levels to desiredLevelRef for the 50ms ticker.
   useEffect(() => {
     if (!isSessionPhase(state.phase) && state.phase !== 'PAUSED') {
       return;
@@ -305,9 +374,10 @@ export function useSessionEngine(isBeat: boolean = false) {
 
       const desired = desiredLevelRef.current;
       const beatMap = beatIntensityRef.current;
-      const currentDevices = stateRef.current.devices;
+      const s = stateRef.current;
+      const currentDevices = s.devices;
 
-      // Decay beat intensities and update desired levels for beat-mode devices
+      // ── Beat intensity decay (beat-mode devices) ──────────────────────────
       for (const [key, val] of beatMap.entries()) {
         const next = Math.max(0, val - delta * 0.04);
         const { slotId, toyId } = parseKey(key);
@@ -321,13 +391,13 @@ export function useSessionEngine(isBeat: boolean = false) {
           if (slot) {
             if (slot.mode === 'mock') {
               if (slot.inputMode === 'beat' && slot.enabled) {
-                const patterned = applyPattern(slot.pattern, next, stateRef.current.elapsedMs, stateRef.current.buildFloor, 20);
+                const patterned = applyPattern(slot.pattern, next, s.elapsedMs, s.buildFloor, 20);
                 desired.set(key, Math.round(patterned * slot.intensityScale));
               }
             } else {
               const tc = toyId ? slot.toyConfigs.find(t => t.toy.id === toyId) : undefined;
               if (tc && tc.inputMode === 'beat' && tc.enabled) {
-                const patterned = applyPattern(tc.pattern, next, stateRef.current.elapsedMs, stateRef.current.buildFloor, 20);
+                const patterned = applyPattern(tc.pattern, next, s.elapsedMs, s.buildFloor, 20);
                 desired.set(key, Math.round(patterned * tc.intensityScale));
               }
             }
@@ -335,8 +405,9 @@ export function useSessionEngine(isBeat: boolean = false) {
         }
       }
 
-      // Update desired levels for auto-mode devices
-      const s = stateRef.current;
+      // ── Auto-mode desired levels (for mock + PatternV2 fallback path) ─────
+      // For Lovense PatternV2 devices in PatternV2 phases, the block scheduler
+      // below will override these values. For all other devices, these are final.
       if (isSessionPhase(s.phase)) {
         for (const slot of s.devices) {
           if (slot.mode === 'mock') {
@@ -352,6 +423,129 @@ export function useSessionEngine(isBeat: boolean = false) {
               const raw = Math.round(patterned * tc.intensityScale);
               desired.set(key, s.curveIntensity > 0 ? Math.max(1, raw) : raw);
             }
+          }
+        }
+      }
+
+      // ── PatternV2 block scheduler (Lovense devices in long phases) ────────
+      if (isSessionPhase(s.phase) && shouldUsePatternV2Phase(s.phase)) {
+        for (const slot of s.devices) {
+          if (slot.mode !== 'lovense') continue;
+          const controller = devicesRef.current.get(slot.id);
+          if (!controller?.supportsPatternV2) continue;
+
+          for (const tc of slot.toyConfigs) {
+            if (!tc.enabled || tc.inputMode === 'beat') continue;
+
+            const key = toyKey(slot.id, tc.toy.id);
+            const schedule = blockScheduleRef.current.get(key);
+
+            // Build generation params from latest session state
+            const activeEvent = s.activeEvent
+              ? {
+                  type: s.activeEvent.type,
+                  remainingMs: Math.max(0, s.activeEvent.durationMs - (s.elapsedMs - s.activeEvent.startedAt)),
+                }
+              : null;
+
+            const genParams: BlockGenParams = {
+              phase:            s.phase,
+              phaseElapsedMs:   s.phaseElapsedMs,
+              sessionElapsedMs: s.elapsedMs,
+              buildFloor:       s.buildFloor,
+              buildDuration:    s.buildDuration,
+              cooldownDuration: s.cooldownDuration,
+              currentCurve:     s.currentCurve,
+              currentIntensity: s.curveIntensity,
+              activeEvent,
+              toyPattern:       tc.pattern,
+              intensityScale:   tc.intensityScale,
+              bpm:              bpmRef.current,
+            };
+
+            // Detect stale blocks: regenerate when phase, buildFloor, or event type changes
+            const needsRegen = !schedule?.current
+              || schedule.current.phaseAtStart !== s.phase
+              || schedule.current.buildFloorAtGeneration !== s.buildFloor
+              || schedule.current.eventTypeAtGeneration !== (s.activeEvent?.type ?? null);
+
+            if (needsRegen && !schedule?.sending) {
+              const block = generateBlock(genParams);
+              blockScheduleRef.current.set(key, { current: block, next: null, startedAt: 0, sending: true });
+
+              // Stop the active block first (PatternV2 Stop halts firmware playback),
+              // then send the new block. stopPattern is a no-op if nothing is playing.
+              const wasPlaying = !!schedule?.current;
+              const doSend = () =>
+                (controller.sendPatternBlock as NonNullable<typeof controller.sendPatternBlock>)(
+                  block.keyframes, block.durationMs, tc.toy.id,
+                );
+
+              (wasPlaying
+                ? controller.stopPattern!(tc.toy.id).catch(() => {}).then(doSend)
+                : doSend()
+              )
+                .then(() => {
+                  const sched = blockScheduleRef.current.get(key);
+                  if (sched) {
+                    sched.startedAt = performance.now();
+                    sched.sending = false;
+                  }
+                  clearDeviceError(slot.id);
+                })
+                .catch((err: unknown) => {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setDeviceError(slot.id, `PatternV2 failed: ${msg} — falling back`);
+                  blockScheduleRef.current.delete(key);
+                });
+              continue; // display will update next frame when send completes
+            }
+
+            if (!schedule?.current || schedule.sending) continue;
+
+            const offset = performance.now() - schedule.startedAt;
+
+            // Pre-generate the next block when 2s remain
+            if (!schedule.next && offset > schedule.current.durationMs - 2_000) {
+              schedule.next = generateBlock({
+                ...genParams,
+                phaseElapsedMs:   schedule.current.phaseElapsedAtStart + PATTERN_BLOCK_DURATION,
+                sessionElapsedMs: schedule.current.sessionElapsedAtStart + PATTERN_BLOCK_DURATION,
+              });
+            }
+
+            // Transition to next block when current expires
+            if (offset >= schedule.current.durationMs) {
+              const nextBlock = schedule.next ?? generateBlock(genParams);
+              schedule.current = nextBlock;
+              schedule.next = null;
+              schedule.startedAt = 0; // will be updated to performance.now() in .then()
+              schedule.sending = true;
+
+              (controller.sendPatternBlock as NonNullable<typeof controller.sendPatternBlock>)(
+                nextBlock.keyframes, nextBlock.durationMs, tc.toy.id,
+              )
+                .then(() => {
+                  const sched = blockScheduleRef.current.get(key);
+                  if (sched) {
+                    sched.startedAt = performance.now(); // device starts playing now
+                    sched.sending = false;
+                  }
+                  clearDeviceError(slot.id);
+                })
+                .catch((err: unknown) => {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setDeviceError(slot.id, `PatternV2 block transition failed: ${msg}`);
+                  blockScheduleRef.current.delete(key);
+                });
+              continue; // display will update next frame when transition send completes
+            }
+
+            // Write interpolated position to desiredLevelRef for display sync
+            // (overrides the auto-mode value written above — this is intentional)
+            const safeOffset = Math.min(offset, schedule.current.durationMs - 1);
+            const pos = interpolateBlockAt(schedule.current, safeOffset);
+            desired.set(key, posToIntensity(pos));
           }
         }
       }
@@ -415,10 +609,16 @@ export function useSessionEngine(isBeat: boolean = false) {
     } else {
       for (const tc of slot.toyConfigs) {
         const key = toyKey(slot.id, tc.toy.id);
-        const rawIntensity = tc.inputMode === 'beat'
-          ? (beatIntensityRef.current.get(key) ?? 0)
-          : state.intensity;
-        deviceIntensities[key] = Math.round(applyPattern(tc.pattern, rawIntensity, state.elapsedMs, state.buildFloor, 20) * tc.intensityScale);
+        // For PatternV2 devices with active blocks, read the interpolated value from desiredLevelRef
+        const schedule = blockScheduleRef.current.get(key);
+        if (schedule?.current && !schedule.sending) {
+          deviceIntensities[key] = desiredLevelRef.current.get(key) ?? 0;
+        } else {
+          const rawIntensity = tc.inputMode === 'beat'
+            ? (beatIntensityRef.current.get(key) ?? 0)
+            : state.intensity;
+          deviceIntensities[key] = Math.round(applyPattern(tc.pattern, rawIntensity, state.elapsedMs, state.buildFloor, 20) * tc.intensityScale);
+        }
       }
     }
   }

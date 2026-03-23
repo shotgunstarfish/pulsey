@@ -12,7 +12,7 @@ import { PlaylistScreen } from './components/PlaylistScreen/PlaylistScreen.tsx';
 
 export default function App() {
   const music = useBeatDetection();
-  const { state, send, deviceErrors, deviceIntensities } = useSessionEngine(music.isBeat);
+  const { state, send, deviceErrors, deviceIntensities } = useSessionEngine(music.isBeat, music.bpm);
   const { playlist, addFiles, removeFile, moveFile, clearCategory, clearAll } = useVideoPlaylist();
 
   useKeyboardInput(send, state.phase, state.paused);

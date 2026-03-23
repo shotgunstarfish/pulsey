@@ -40,6 +40,48 @@ export function defaultPatternForToyType(type: string | undefined | null): ToyPa
 }
 
 /**
+ * Float-precision version of applyPattern — no rounding on output.
+ * Used by the PatternV2 block generator for 0-100 position scale.
+ */
+export function applyPatternRaw(
+  pattern: ToyPattern,
+  globalIntensity: number,
+  elapsedMs: number,
+  _floor: number,
+  ceiling: number,
+): number {
+  function clampF(v: number): number {
+    return Math.max(0, Math.min(ceiling, v));
+  }
+  switch (pattern) {
+    case 'direct':
+      return clampF(globalIntensity);
+    case 'complement':
+      return globalIntensity === 0 ? 0 : clampF(ceiling - globalIntensity);
+    case 'pulse': {
+      const periodMs = 2000 - (globalIntensity / ceiling) * 1200;
+      const cyclePos = (elapsedMs % periodMs) / periodMs;
+      const gate = cyclePos < 0.5 ? 1.0 : 0.15;
+      const raw = globalIntensity * gate;
+      return clampF(globalIntensity > 0 ? Math.max(1, raw) : raw);
+    }
+    case 'rumble': {
+      const base = globalIntensity * 0.5;
+      const drift =
+        Math.sin(elapsedMs / 3000) * ceiling * 0.125 +
+        Math.sin(elapsedMs / 7000) * ceiling * 0.125;
+      return clampF(globalIntensity > 0 ? Math.max(1, base + drift) : base + drift);
+    }
+    case 'wave': {
+      const raw = globalIntensity + Math.sin(elapsedMs / 4000) * 4;
+      return clampF(globalIntensity > 0 ? Math.max(1, raw) : raw);
+    }
+    default:
+      return clampF(globalIntensity);
+  }
+}
+
+/**
  * Apply a per-toy pattern transform to the global intensity.
  * Pure function — returns a value clamped to [0, ceiling].
  */

@@ -354,3 +354,47 @@
 .waveformStrip {
   padding: 0 0.5rem;
 }
+
+/* ── Beg button ────────────────────────────────────────── */
+
+.begWrap {
+  display: flex;
+  justify-content: center;
+  padding: 0.25rem 0;
+}
+
+@keyframes begPulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255, 200, 0, 0.6); }
+  50%       { transform: scale(1.04); box-shadow: 0 0 18px 6px rgba(255, 200, 0, 0.3); }
+}
+
+.begBtn {
+  padding: 0.6rem 2.2rem;
+  font-size: 1.1rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--gold);
+  border: 2px solid var(--gold);
+  border-radius: 8px;
+  cursor: pointer;
+  animation: begPulse 1.8s ease-in-out infinite;
+  transition: opacity 0.2s;
+}
+
+.begBtn:disabled {
+  opacity: 0.3;
+  animation: none;
+  cursor: default;
+}
+
+.begTaunt {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--red);
+  text-align: center;
+  opacity: 0.85;
+  animation: begPulse 2.5s ease-in-out infinite;
+}

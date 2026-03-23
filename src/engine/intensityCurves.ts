@@ -71,3 +71,39 @@ export function computeIntensity(
       return pulseTrain(elapsedMs, durationMs, floor, ceiling);
   }
 }
+
+/**
+ * Float-precision version of computeIntensity — returns raw float in [0, 20], no rounding.
+ * Used by the PatternV2 block generator for 0-100 position scale.
+ */
+export function computeIntensityRaw(
+  curve: CurveType,
+  elapsedMs: number,
+  durationMs: number,
+  floor: number,
+  ceiling: number,
+): number {
+  function clampF(v: number): number {
+    return Math.max(0, Math.min(20, v));
+  }
+  switch (curve) {
+    case 'sine': {
+      const progress = Math.min(1, elapsedMs / durationMs);
+      const currentFloor = floor + (ceiling - floor) * progress * 0.5;
+      const amplitude = (ceiling - currentFloor) * 0.5;
+      const oscillation = Math.sin(progress * 4 * 2 * Math.PI);
+      return clampF(Math.max(floor, currentFloor + oscillation * amplitude));
+    }
+    case 'linear': {
+      const progress = Math.min(1, elapsedMs / durationMs);
+      return clampF(floor + (ceiling - floor) * progress);
+    }
+    case 'pulse': {
+      const progress = Math.min(1, elapsedMs / durationMs);
+      const frequency = 0.5 + progress * 3.5;
+      const dutyCycle = 0.3 + progress * 0.5;
+      const cyclePosition = (elapsedMs / 1000 * frequency) % 1;
+      return clampF(cyclePosition < dutyCycle ? ceiling : floor);
+    }
+  }
+}

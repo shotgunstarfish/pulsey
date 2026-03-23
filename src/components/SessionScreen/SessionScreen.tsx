@@ -261,6 +261,43 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
           paused={state.paused}
         />
 
+        {/* Feeling buttons */}
+        <div className={styles.feelingLabel}>How close are you?</div>
+        <div className={styles.feelingBar}>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+            <button
+              key={n}
+              className={`${styles.feelingBtn} ${state.feelingLevel === n ? styles.feelingActive : ''} ${state.feelingLevel === n && isBeat ? styles.feelingBeat : ''}`}
+              onClick={() => send({ type: 'REPORT_FEELING', level: n })}
+              style={{
+                borderColor: n <= 3 ? 'var(--green)' : n <= 6 ? 'var(--orange)' : n <= 8 ? 'var(--red)' : 'var(--gold)',
+                ...(state.feelingLevel === n ? {
+                  background: n <= 3 ? 'var(--green)' : n <= 6 ? 'var(--orange)' : n <= 8 ? 'var(--red)' : 'var(--gold)',
+                  color: '#000',
+                } : {}),
+              }}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+
+        {/* Beg button — DECISION phase, not yet granted, not yet begged */}
+        {state.phase === 'DECISION' && !state.releaseRolled && (
+          <div className={styles.begWrap}>
+            <button
+              className={styles.begBtn}
+              disabled={state.hasBeggedThisDecision}
+              onClick={() => send({ type: 'BEG' })}
+            >
+              {state.hasBeggedThisDecision ? 'DENIED' : 'BEG!'}
+            </button>
+            {state.begDenialTaunt && (
+              <p className={styles.begTaunt}>{state.begDenialTaunt}</p>
+            )}
+          </div>
+        )}
+
         {/* Per-device/toy panel */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0 0.5rem' }}>
           {state.devices.flatMap(slot => {
@@ -346,27 +383,6 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
               );
             });
           })}
-        </div>
-
-        {/* Feeling buttons */}
-        <div className={styles.feelingLabel}>How close are you?</div>
-        <div className={styles.feelingBar}>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-            <button
-              key={n}
-              className={`${styles.feelingBtn} ${state.feelingLevel === n ? styles.feelingActive : ''} ${state.feelingLevel === n && isBeat ? styles.feelingBeat : ''}`}
-              onClick={() => send({ type: 'REPORT_FEELING', level: n })}
-              style={{
-                borderColor: n <= 3 ? 'var(--green)' : n <= 6 ? 'var(--orange)' : n <= 8 ? 'var(--red)' : 'var(--gold)',
-                ...(state.feelingLevel === n ? {
-                  background: n <= 3 ? 'var(--green)' : n <= 6 ? 'var(--orange)' : n <= 8 ? 'var(--red)' : 'var(--gold)',
-                  color: '#000',
-                } : {}),
-              }}
-            >
-              {n}
-            </button>
-          ))}
         </div>
 
         {/* Device error banner */}
