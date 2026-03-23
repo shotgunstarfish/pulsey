@@ -56,7 +56,7 @@ const BADGE_LABELS: Record<VideoCategory, string> = {
 };
 
 export function VideoPanel({ playlist, phase, intensity, isBeat = false }: VideoPanelProps) {
-  const [fitContain, setFitContain] = useState(false);
+  const [fitContain, setFitContain] = useState(true);
   const rawCategory = getCategoryForSession(phase, intensity);
 
   // Debounce category changes so rapid intensity oscillation doesn't cause constant cuts

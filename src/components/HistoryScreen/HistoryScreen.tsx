@@ -30,7 +30,9 @@ export function HistoryScreen({ send }: HistoryScreenProps) {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      minHeight: '100vh',
+      height: '100%',
+      overflowY: 'auto',
+      overflowX: 'hidden',
       padding: '2rem',
     }}>
       <div style={{

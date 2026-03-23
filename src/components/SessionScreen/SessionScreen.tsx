@@ -299,7 +299,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
         )}
 
         {/* Per-device/toy panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0 0.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0 0.25rem', maxHeight: '7rem', overflowY: 'auto' }}>
           {state.devices.flatMap(slot => {
             const rowStyle = {
               display: 'flex',
