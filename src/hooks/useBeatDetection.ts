@@ -11,9 +11,74 @@ const BEAT_WINDOW_MS = 150;
 const ROLLING_WINDOW_SIZE = 30;
 const BEAT_THRESHOLD = 1.4;
 
-export interface Track {
+// ── IndexedDB persistence ─────────────────────────────────────────────────────
+
+const IDB_NAME  = 'ai-video-reel:music';
+const IDB_STORE = 'tracks';
+
+interface IDBTrackRecord {
+  id:   number;
   name: string;
-  url: string;
+  file: File;
+}
+
+function openMusicDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(IDB_STORE, { keyPath: 'id', autoIncrement: true });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function idbLoadAll(): Promise<IDBTrackRecord[]> {
+  const db = await openMusicDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).getAll();
+    req.onsuccess = () => resolve(req.result as IDBTrackRecord[]);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function idbAddFile(file: File): Promise<number> {
+  const db = await openMusicDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE, 'readwrite');
+    const req = tx.objectStore(IDB_STORE).add({ name: file.name, file });
+    req.onsuccess = () => resolve(req.result as number);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function idbRemove(id: number): Promise<void> {
+  const db = await openMusicDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE, 'readwrite');
+    const req = tx.objectStore(IDB_STORE).delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function idbClear(): Promise<void> {
+  const db = await openMusicDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE, 'readwrite');
+    const req = tx.objectStore(IDB_STORE).clear();
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface Track {
+  name:   string;
+  url:    string;
+  idbId?: number;  // set for persisted tracks; absent for tracks not yet saved
 }
 
 export interface BeatDetectionControls {
@@ -132,6 +197,32 @@ export function useBeatDetection(): BeatDetectionControls {
     tick();
   }, []);
 
+  // ── Restore persisted playlist on mount ─────────────────
+
+  useEffect(() => {
+    idbLoadAll().then(records => {
+      if (records.length === 0) return;
+      const restored: Track[] = records.map(r => ({
+        name:  r.name,
+        url:   URL.createObjectURL(r.file),
+        idbId: r.id,
+      }));
+      setTracks(restored);
+      ensureAudioContext();
+      // Wire up audio pipeline for the first track (don't autoplay)
+      setTimeout(() => {
+        ensureSourceConnected();
+        startBeatLoop();
+        if (audioRef.current) {
+          audioRef.current.src = restored[0].url;
+          audioRef.current.load();
+        }
+        setCurrentTrackIndex(0);
+      }, 0);
+    }).catch(() => { /* IDB unavailable — no-op */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount-only
+
   // ── Auto-advance on track end ────────────────────────────
 
   useEffect(() => {
@@ -177,24 +268,28 @@ export function useBeatDetection(): BeatDetectionControls {
     (files: FileList | File[]) => {
       ensureAudioContext();
       const fileArray = Array.from(files);
-      const newTracks: Track[] = fileArray.map(f => ({
-        name: f.name,
-        url: URL.createObjectURL(f),
-      }));
 
       const wasEmpty = tracksRef.current.length === 0;
-      setTracks(prev => [...prev, ...newTracks]);
 
-      if (wasEmpty && newTracks.length > 0) {
-        // First tracks added: wire up audio pipeline and load first track
-        ensureSourceConnected();
-        startBeatLoop();
-        if (audioRef.current) {
-          audioRef.current.src = newTracks[0].url;
-          audioRef.current.load();
+      // Persist to IDB and create blob URLs; update state once all saves complete
+      Promise.all(
+        fileArray.map(async f => {
+          const id = await idbAddFile(f).catch(() => undefined);
+          return { name: f.name, url: URL.createObjectURL(f), idbId: id } as Track;
+        })
+      ).then(newTracks => {
+        setTracks(prev => [...prev, ...newTracks]);
+
+        if (wasEmpty && newTracks.length > 0) {
+          ensureSourceConnected();
+          startBeatLoop();
+          if (audioRef.current) {
+            audioRef.current.src = newTracks[0].url;
+            audioRef.current.load();
+          }
+          setCurrentTrackIndex(0);
         }
-        setCurrentTrackIndex(0);
-      }
+      });
     },
     [ensureAudioContext, ensureSourceConnected, startBeatLoop],
   );
@@ -206,7 +301,10 @@ export function useBeatDetection(): BeatDetectionControls {
 
     const updated = [...list];
     const removed = updated.splice(index, 1);
-    if (removed[0]) URL.revokeObjectURL(removed[0].url);
+    if (removed[0]) {
+      URL.revokeObjectURL(removed[0].url);
+      if (removed[0].idbId !== undefined) idbRemove(removed[0].idbId).catch(() => {});
+    }
     setTracks(updated);
 
     if (updated.length === 0) {
@@ -236,6 +334,7 @@ export function useBeatDetection(): BeatDetectionControls {
 
   const clearAllTracks = useCallback(() => {
     tracksRef.current.forEach(t => URL.revokeObjectURL(t.url));
+    idbClear().catch(() => {});
     setTracks([]);
     const audio = audioRef.current;
     if (audio) { audio.pause(); audio.src = ''; }

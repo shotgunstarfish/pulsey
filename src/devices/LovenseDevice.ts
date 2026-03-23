@@ -1,9 +1,12 @@
 /** Real Lovense device — HTTP API calls to Lovense Remote app */
 
 import type { DeviceController } from './DeviceController.ts';
+import type { PatternKeyframe } from '../engine/patternBlock.ts';
 
 export class LovenseDevice implements DeviceController {
   private baseUrl: string;
+
+  readonly supportsPatternV2 = true;
 
   constructor(domain: string, port: number, ssl = false) {
     this.baseUrl = `${ssl ? 'https' : 'http'}://${domain}:${port}`;
@@ -29,8 +32,42 @@ export class LovenseDevice implements DeviceController {
   }
 
   disconnect(): void {
+    this.stopPattern().catch(() => {});  // stop PatternV2 if active
     this.sendCommand('Function', 'Vibrate:0', undefined, 1).catch(() => {});
   }
+
+  // ── PatternV2 ─────────────────────────────────────────────────────────────
+
+  /**
+   * Upload and immediately play a pre-computed PatternV2 block using InitPlay.
+   * Single HTTP call vs the two-step Setup→Play.
+   * Uses stopPrevious:0 — seamless transition at natural block boundaries.
+   * To interrupt an active block, call stopPattern() first, then this method.
+   * Requires Lovense Remote firmware v7.76.0+.
+   */
+  async sendPatternBlock(keyframes: PatternKeyframe[], durationMs: number, toyId?: string): Promise<void> {
+    await this.sendPatternV2({
+      command:      'PatternV2',
+      type:         'InitPlay',
+      actions:      keyframes,
+      startTime:    0,
+      timeMs:       durationMs,
+      toy:          toyId ?? '',
+      stopPrevious: 0,
+      apiVer:       1,
+    });
+  }
+
+  async stopPattern(toyId?: string): Promise<void> {
+    await this.sendPatternV2({
+      command: 'PatternV2',
+      type: 'Stop',
+      toy: toyId ?? '',
+      apiVer: 1,
+    });
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
 
   private async sendCommand(command: string, action: string, toyId?: string, stopPrevious = 1): Promise<void> {
     const response = await fetch(`${this.baseUrl}/command`, {
@@ -56,6 +93,24 @@ export class LovenseDevice implements DeviceController {
     const data = await response.json() as { code?: number };
     if (data.code && data.code !== 200) {
       throw new Error(`Lovense returned code ${data.code}`);
+    }
+  }
+
+  private async sendPatternV2(body: Record<string, unknown>): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/command`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-platform': 'ai-video-reel',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`Lovense PatternV2 API ${response.status}: ${response.statusText}`);
+    }
+    const data = await response.json() as { code?: number };
+    if (data.code && data.code !== 200) {
+      throw new Error(`Lovense PatternV2 returned code ${data.code}`);
     }
   }
 }

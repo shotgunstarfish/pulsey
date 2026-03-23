@@ -7,7 +7,6 @@ export type { ToyPattern };
 import { defaultPatternForToyType } from './toyPatterns.ts';
 import type { RandomEvent } from './randomEvents.ts';
 import { shouldTriggerEvent, pickRandomEvent, isEventExpired } from './randomEvents.ts';
-import { rollForRelease } from './diceRoll.ts';
 
 // ── Phases ──────────────────────────────────────────────
 
@@ -92,6 +91,8 @@ export interface SessionState {
   holdChallengeFeelingsOk: boolean;  // tracking hold challenge
   beatBoost: number;                 // transient beat-synced intensity boost, decays to 0
   curveIntensity: number;            // intensity from curve only, no beat boost — use this for smooth device control
+  hasBeggedThisDecision: boolean;    // true after user begs in current DECISION phase
+  begDenialTaunt: string | null;     // taunt text shown after a BEG denial
 }
 
 // ── Actions ─────────────────────────────────────────────
@@ -122,7 +123,8 @@ export type SessionAction =
   | { type: 'GO_PLAYLIST' }
   | { type: 'SET_TOYS'; deviceId: string; toys: LovenseToy[] }
   | { type: 'SET_INPUT_MODE'; deviceId: string; inputMode: 'auto' | 'beat' }
-  | { type: 'UPDATE_TOY_CONFIG'; deviceId: string; toyId: string; patch: Partial<Pick<ToyConfig, 'intensityScale' | 'inputMode' | 'enabled' | 'pattern'>> };
+  | { type: 'UPDATE_TOY_CONFIG'; deviceId: string; toyId: string; patch: Partial<Pick<ToyConfig, 'intensityScale' | 'inputMode' | 'enabled' | 'pattern'>> }
+  | { type: 'BEG' };
 
 // ── Splash message pools ────────────────────────────────
 
@@ -139,7 +141,26 @@ const SPLASH_FEELING_MID = ['HOLDING STEADY', 'KEEP GOING', 'GOOD'];
 const SPLASH_FEELING_HIGH = ['EDGING YOU', 'NOT YET', 'SO CLOSE...', 'STAY THERE'];
 const SPLASH_FEELING_EDGE = ['EDGE CONFIRMED', 'GOTCHA', "THAT'S IT"];
 const SPLASH_DICE_CONTINUE = ['NOT THIS TIME', 'DENIED', 'KEEP SUFFERING', 'NOT DONE YET'];
-const SPLASH_DICE_RELEASE = ['YOU EARNED IT', 'RELEASE', 'FINALLY'];
+const SPLASH_BEG_DENY = ['DENIED', 'NO.', 'PATHETIC', 'TRY HARDER', 'NOT A CHANCE'];
+const SPLASH_BEG_GRANT = ['...FINE', 'YOU EARNED IT THIS TIME', 'JUST THIS ONCE'];
+
+const BEG_DENIAL_TAUNTS = [
+  "Begging already? We just got started.",
+  "That's adorable. The answer is no.",
+  "You think that pitiful display deserves a reward?",
+  "Come back when you've actually earned it.",
+  "Not even close to convincing. Keep suffering.",
+  "Did you really think that would work?",
+  "Your desperation is showing. Good.",
+  "No. Now be quiet and take it.",
+  "I've heard more convincing begging from a golden retriever.",
+  "The suffering is the point. We're not done yet.",
+  "Try again next time. With more conviction.",
+  "Denied. You're welcome.",
+  "That level of begging gets you nothing. Noted.",
+  "Oh, that was supposed to be persuasive?",
+  "You'll have to do a lot better than that.",
+];
 const SPLASH_SPIKE = ['SURPRISE!', 'SPIKE!', 'FEEL THAT!'];
 const SPLASH_PAUSE = ['HOLD STILL', "DON'T MOVE", 'FREEZE'];
 const SPLASH_HOLD_START = ['HOLD THE EDGE', 'STAY THERE', "DON'T YOU DARE"];
@@ -208,6 +229,8 @@ export const initialState: SessionState = {
   holdChallengeFeelingsOk: true,
   beatBoost: 0,
   curveIntensity: 0,
+  hasBeggedThisDecision: false,
+  begDenialTaunt: null,
 };
 
 // ── Reducer ─────────────────────────────────────────────
@@ -443,18 +466,17 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         // Already in EDGE_CHECK — confirm immediately
         if (state.phase === 'EDGE_CHECK') {
           const newEdgeCount = state.edgeCount + 1;
-          const release = rollForRelease(newEdgeCount);
           return {
             ...state,
             feelingLevel: level,
             edgeCount: newEdgeCount,
             phase: 'DECISION',
             phaseElapsedMs: 0,
-            releaseRolled: release,
+            releaseRolled: false,
+            hasBeggedThisDecision: false,
+            begDenialTaunt: null,
             intensity: Math.max(5, state.intensity - 5),
-            splash: release
-              ? splash(pick(SPLASH_DICE_RELEASE), 'gold')
-              : splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
+            splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
           };
         }
         return {
@@ -470,16 +492,15 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
 
     case 'EDGE_CONFIRMED': {
       const newEdgeCount = state.edgeCount + 1;
-      const release = rollForRelease(newEdgeCount);
       return {
         ...state,
         edgeCount: newEdgeCount,
         phase: 'DECISION',
         phaseElapsedMs: 0,
-        releaseRolled: release,
-        splash: release
-          ? splash(pick(SPLASH_DICE_RELEASE), 'gold')
-          : splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
+        releaseRolled: false,
+        hasBeggedThisDecision: false,
+        begDenialTaunt: null,
+        splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
       };
     }
 
@@ -520,6 +541,31 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
           : state.cooldownDuration,
         currentCurve: nextCurve(state.currentCurve),
       };
+
+    case 'BEG': {
+      // Only valid in DECISION when not yet begged and release wasn't already granted
+      if (state.phase !== 'DECISION' || state.hasBeggedThisDecision || state.releaseRolled) return state;
+      // 15% grant, 85% deny
+      const granted = Math.random() < 0.15;
+      if (granted) {
+        return {
+          ...state,
+          phase: 'RELEASE',
+          phaseElapsedMs: 0,
+          intensity: 20,
+          hasBeggedThisDecision: true,
+          splash: splash(pick(SPLASH_BEG_GRANT), 'gold'),
+        };
+      }
+      return {
+        ...state,
+        hasBeggedThisDecision: true,
+        begDenialTaunt: pick(BEG_DENIAL_TAUNTS),
+        // Punishment: next build will be slightly longer
+        buildFloor: Math.min(state.buildFloor + 1, 12),
+        splash: splash(pick(SPLASH_BEG_DENY), 'red'),
+      };
+    }
 
     case 'COOLDOWN_COMPLETE':
       return {
@@ -717,18 +763,17 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
           // Auto-advance to EDGE_CHECK after PLATEAU_DURATION
           if (newPhaseElapsed >= PLATEAU_DURATION) {
             const newEdgeCount = state.edgeCount + 1;
-            const release = rollForRelease(newEdgeCount);
             return {
               ...state,
               elapsedMs: newElapsed,
               phaseElapsedMs: 0,
               edgeCount: newEdgeCount,
               phase: 'DECISION',
-              releaseRolled: release,
+              releaseRolled: false,
+              hasBeggedThisDecision: false,
+              begDenialTaunt: null,
               intensity: Math.max(5, BUILD_CEILING - 5),
-              splash: release
-                ? splash(pick(SPLASH_DICE_RELEASE), 'gold')
-                : splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
+              splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
             };
           }
 
@@ -743,18 +788,17 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
           // Brief pause — auto-confirm edge after 2 seconds
           if (newPhaseElapsed >= 2000) {
             const newEdgeCount = state.edgeCount + 1;
-            const release = rollForRelease(newEdgeCount);
             return {
               ...state,
               elapsedMs: newElapsed,
               phaseElapsedMs: 0,
               edgeCount: newEdgeCount,
               phase: 'DECISION',
-              releaseRolled: release,
+              releaseRolled: false,
+              hasBeggedThisDecision: false,
+              begDenialTaunt: null,
               intensity: Math.max(5, state.intensity - 5),
-              splash: release
-                ? splash(pick(SPLASH_DICE_RELEASE), 'gold')
-                : splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
+              splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
             };
           }
           return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed };
