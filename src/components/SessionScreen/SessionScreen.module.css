@@ -120,9 +120,10 @@
   flex: 1;
   max-width: 60vw;
   min-width: 0;
-  align-self: stretch;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
 }
 
 .intensityNumber {
@@ -387,6 +388,13 @@
   opacity: 0.3;
   animation: none;
   cursor: default;
+}
+
+/* Modifier: aligns taunt under the video column (mirrors videoInline sizing) */
+.begTauntBelow {
+  margin-left: auto;
+  max-width: 60vw;
+  width: 100%;
 }
 
 .begTaunt {

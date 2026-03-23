@@ -237,15 +237,11 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
                 phase={state.phase}
                 intensity={state.intensity}
                 isBeat={isBeat}
+                tauntText={state.begDenialTaunt}
               />
             </div>
           )}
         </div>
-
-        {/* Taunt text below video (video mode only) */}
-        {showVideo && state.begDenialTaunt && (
-          <p className={styles.begTaunt} style={{ margin: 0 }}>{state.begDenialTaunt}</p>
-        )}
 
         {/* Bass energy waveform strip */}
         <div className={styles.waveformStrip}>
@@ -297,9 +293,6 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
             >
               {state.hasBeggedThisDecision ? 'DENIED' : 'BEG!'}
             </button>
-            {!showVideo && state.begDenialTaunt && (
-              <p className={styles.begTaunt}>{state.begDenialTaunt}</p>
-            )}
           </div>
         )}
 

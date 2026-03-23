@@ -57,6 +57,7 @@ interface VideoPanelProps {
   phase: string;
   intensity: number;
   isBeat?: boolean;
+  tauntText?: string | null;
 }
 
 const BADGE_LABELS: Record<VideoCategory, string> = {
@@ -73,8 +74,8 @@ const BADGE_LABELS: Record<VideoCategory, string> = {
  */
 type LayerMode = 'single' | 'triple' | 'mixed';
 
-export function VideoPanel({ playlist, phase, intensity, isBeat = false }: VideoPanelProps) {
-  const [fitContain, setFitContain] = useState(true);
+export function VideoPanel({ playlist, phase, intensity, isBeat = false, tauntText }: VideoPanelProps) {
+  const [fitContain, setFitContain] = useState(true); // auto-adjusted by layout mode
   const rawCategory = getCategoryForSession(phase, intensity);
 
   // Debounce category changes so rapid intensity oscillation doesn't cause constant cuts
@@ -141,11 +142,20 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
   const [landscapeLane, setLandscapeLane] = useState<[number, number]>([-1, -1]);
   const landscapeLaneRef = useRef<[number, number]>([-1, -1]);
 
+  // For 'mixed' mode: mirror the right portrait when the same video fills both portrait lanes
+  const [mirrorRight, setMirrorRight] = useState<[boolean, boolean]>([false, false]);
+  const mirrorRightRef = useRef<[boolean, boolean]>([false, false]);
+
   // layerRefs[slot][lane] — 2 layers × 3 lanes = 6 elements, always mounted
   const layerRefs = [
     [useRef<HTMLVideoElement>(null), useRef<HTMLVideoElement>(null), useRef<HTMLVideoElement>(null)],
     [useRef<HTMLVideoElement>(null), useRef<HTMLVideoElement>(null), useRef<HTMLVideoElement>(null)],
   ] as const;
+
+  // Auto crop for multi-video layouts, fit for single
+  useEffect(() => {
+    setFitContain(layerMode[activeSlot] === 'single');
+  }, [layerMode, activeSlot]);
 
   const prevCategoryRef = useRef<VideoCategory>(currentCategory);
 
@@ -190,7 +200,7 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
   const loadLayer = useCallback(
     (inSlot: 0 | 1, firstUrl: string, onDone: () => void) => {
       const list = playlist[currentCategory];
-      const canMulti = list.length >= 3;
+      const canMulti = list.length >= 2;
       const targetCount = canMulti ? 3 : 1;
 
       let readyCount = 0;
@@ -220,17 +230,26 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
           mode = 'single';
         }
 
+        // Mirror the right portrait when only 1 unique portrait exists in the category
+        // (deck cycling causes lane 0 and lane 2 to share the same URL)
+        const mirror = mode === 'mixed' && list.length <= 2;
+
         const nextMode: [LayerMode, LayerMode] = inSlot === 0
           ? [mode, layerModeRef.current[1]]
           : [layerModeRef.current[0], mode];
         const nextLscape: [number, number] = inSlot === 0
           ? [lscape, landscapeLaneRef.current[1]]
           : [landscapeLaneRef.current[0], lscape];
+        const nextMirror: [boolean, boolean] = inSlot === 0
+          ? [mirror, mirrorRightRef.current[1]]
+          : [mirrorRightRef.current[0], mirror];
 
         layerModeRef.current = nextMode;
         landscapeLaneRef.current = nextLscape;
+        mirrorRightRef.current = nextMirror;
         setLayerMode(nextMode);
         setLandscapeLane(nextLscape);
+        setMirrorRight(nextMirror);
       }
 
       function checkDone() {
@@ -417,18 +436,23 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
 
   if (categoryVideos.length === 0) {
     return (
-      <div className={wrapperClass} data-category={currentCategory}>
-        <span className={styles.badge} data-category={currentCategory}>
-          {BADGE_LABELS[currentCategory]}
-        </span>
-        <div className={styles.placeholder}>
-          No {currentCategory} videos — add some in Playlist
+      <div className={styles.outer}>
+        {tauntText && <p className={styles.tauntBelow}>{tauntText}</p>}
+        <div className={wrapperClass} data-category={currentCategory}>
+          <span className={styles.badge} data-category={currentCategory}>
+            {BADGE_LABELS[currentCategory]}
+          </span>
+          <div className={styles.placeholder}>
+            No {currentCategory} videos — add some in Playlist
+          </div>
         </div>
       </div>
     );
   }
 
   return (
+    <div className={styles.outer}>
+    {tauntText && <p className={styles.tauntBelow}>{tauntText}</p>}
     <div className={wrapperClass} data-category={currentCategory}>
       <span className={styles.badge} data-category={currentCategory}>
         {BADGE_LABELS[currentCategory]}
@@ -469,11 +493,13 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
                     : portraitPos === 0
                       ? `${styles.mixedPortraitLeft}${fitContain ? ` ${styles.videoContain}` : ''}`
                       : `${styles.mixedPortraitRight}${fitContain ? ` ${styles.videoContain}` : ''}`;
+                  const shouldMirror = !isLandscape && portraitPos === 1 && mirrorRight[slot];
                   return (
                     <video
                       key={lane}
                       ref={layerRefs[slot][lane]}
                       className={cls}
+                      style={shouldMirror ? { transform: 'scaleX(-1)' } : undefined}
                       autoPlay muted playsInline
                       onEnded={() => handleEnded(slot)}
                     />
@@ -507,8 +533,9 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false }: Video
         onClick={() => setFitContain(f => !f)}
         title={fitContain ? 'Switch to fill (crop)' : 'Switch to fit (show all)'}
       >
-        {fitContain ? 'CROP' : 'FIT'}
+        {fitContain ? 'FIT' : 'CROP'}
       </button>
+    </div>
     </div>
   );
 }
