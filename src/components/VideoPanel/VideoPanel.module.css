@@ -3,6 +3,22 @@
   100% { transform: scale(1);     filter: brightness(1); }
 }
 
+.outer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tauntBelow {
+  margin: 0;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--red);
+  text-align: center;
+  opacity: 0.85;
+}
+
 .wrapper {
   position: relative;
   width: 100%;
