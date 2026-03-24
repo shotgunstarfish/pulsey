@@ -57,7 +57,6 @@ interface VideoPanelProps {
   phase: string;
   intensity: number;
   isBeat?: boolean;
-  tauntText?: string | null;
 }
 
 const BADGE_LABELS: Record<VideoCategory, string> = {
@@ -74,7 +73,7 @@ const BADGE_LABELS: Record<VideoCategory, string> = {
  */
 type LayerMode = 'single' | 'triple' | 'mixed';
 
-export function VideoPanel({ playlist, phase, intensity, isBeat = false, tauntText }: VideoPanelProps) {
+export function VideoPanel({ playlist, phase, intensity, isBeat = false }: VideoPanelProps) {
   const [fitContain, setFitContain] = useState(true); // auto-adjusted by layout mode
   const rawCategory = getCategoryForSession(phase, intensity);
 
@@ -436,23 +435,18 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false, tauntTe
 
   if (categoryVideos.length === 0) {
     return (
-      <div className={styles.outer}>
-        {tauntText && <p className={styles.tauntBelow}>{tauntText}</p>}
-        <div className={wrapperClass} data-category={currentCategory}>
-          <span className={styles.badge} data-category={currentCategory}>
-            {BADGE_LABELS[currentCategory]}
-          </span>
-          <div className={styles.placeholder}>
-            No {currentCategory} videos — add some in Playlist
-          </div>
+      <div className={wrapperClass} data-category={currentCategory}>
+        <span className={styles.badge} data-category={currentCategory}>
+          {BADGE_LABELS[currentCategory]}
+        </span>
+        <div className={styles.placeholder}>
+          No {currentCategory} videos — add some in Playlist
         </div>
       </div>
     );
   }
 
   return (
-    <div className={styles.outer}>
-    {tauntText && <p className={styles.tauntBelow}>{tauntText}</p>}
     <div className={wrapperClass} data-category={currentCategory}>
       <span className={styles.badge} data-category={currentCategory}>
         {BADGE_LABELS[currentCategory]}
@@ -535,7 +529,6 @@ export function VideoPanel({ playlist, phase, intensity, isBeat = false, tauntTe
       >
         {fitContain ? 'FIT' : 'CROP'}
       </button>
-    </div>
     </div>
   );
 }

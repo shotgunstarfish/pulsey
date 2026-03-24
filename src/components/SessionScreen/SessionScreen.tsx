@@ -7,11 +7,11 @@ import type { PlaylistStore } from '../../hooks/useVideoPlaylist.ts';
 import { hasAnyVideos } from '../../hooks/useVideoPlaylist.ts';
 import { getEventRemainingMs } from '../../engine/randomEvents.ts';
 import { getReleaseChance } from '../../engine/diceRoll.ts';
-import { IntensityBar } from '../IntensityBar/IntensityBar.tsx';
 import { VideoPanel } from '../VideoPanel/VideoPanel.tsx';
 import { EncouragementDisplay } from '../EncouragementDisplay/EncouragementDisplay.tsx';
 import { BassWaveform } from '../BassWaveform/BassWaveform.tsx';
 import { SessionBackground } from '../SessionBackground/SessionBackground.tsx';
+import { RadialGauge } from './RadialGauge.tsx';
 import styles from './SessionScreen.module.css';
 
 interface SessionScreenProps {
@@ -132,6 +132,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
         phaseColor={phaseColor}
         isBeat={isBeat}
         intensity={state.intensity}
+        bassEnergyRef={bassEnergyRef}
       />
       <div style={{ position: 'relative', zIndex: 1, display: 'contents' }}>
         {/* Beat flash overlay */}
@@ -143,12 +144,12 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
         {/* Top bar */}
         <div className={styles.topBar}>
           <div className={styles.phaseBlock}>
-            <span className={`${styles.phaseLabel}${isBeat ? ` ${styles.phaseLabelBeat}` : ''}`} style={{ color: phaseColor }}>
+            <span className={`${styles.phaseLabel}${showVideo ? ` ${styles.phaseLabelVideo}` : ''}${isBeat ? ` ${styles.phaseLabelBeat}` : ''}`} style={{ color: phaseColor }}>
               {getPhaseLabel(state)}
             </span>
             {state.phase === 'BUILD' && <span className={styles.curveTag}>{state.currentCurve}</span>}
           </div>
-          <div className={styles.stats}>
+          <div className={`${styles.stats}${showVideo ? ` ${styles.statsVideo}` : ''}`}>
             {/* View mode toggle */}
             <div className={styles.viewToggle}>
               <button
@@ -199,58 +200,74 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
           />
         </div>
 
-        {/* Event banner */}
-        {state.activeEvent && (
-          <div className={styles.eventBanner}>
-            <span className={styles.eventType}>
-              {state.activeEvent.type === 'INTENSITY_SPIKE' && 'INTENSITY SPIKE'}
-              {state.activeEvent.type === 'FORCED_PAUSE' && 'FORCED PAUSE'}
-              {state.activeEvent.type === 'HOLD_CHALLENGE' && 'HOLD CHALLENGE'}
-            </span>
-            <span className={styles.eventTimer}>
-              {Math.ceil(eventRemaining / 1000)}s
-            </span>
-          </div>
-        )}
-
-        {/* Center: intensity gauge (+ video inline when in video mode) */}
+        {/* Center: intensity gauge (+ waveform inline in video mode) */}
         <div className={`${showVideo ? styles.gaugeAreaVideo : styles.gaugeArea}${isBeat ? ` ${styles.gaugeAreaBeat}` : ''}`}>
-          <IntensityBar intensity={state.intensity} isBeat={isBeat} />
-          <div className={styles.intensityWrapper}>
-            <div
-              key={beatKeyRef.current}
-              className={`${styles.beatRing} ${isBeat ? styles.beatRingActive : ''}`}
-              style={{ color: phaseColor }}
+          {/* Event banner — absolutely overlaid so it doesn't add vertical height */}
+          {state.activeEvent && (
+            <div className={styles.eventBanner}>
+              <span className={styles.eventType}>
+                {state.activeEvent.type === 'INTENSITY_SPIKE' && 'INTENSITY SPIKE'}
+                {state.activeEvent.type === 'FORCED_PAUSE' && 'FORCED PAUSE'}
+                {state.activeEvent.type === 'HOLD_CHALLENGE' && 'HOLD CHALLENGE'}
+              </span>
+              <span className={styles.eventTimer}>
+                {Math.ceil(eventRemaining / 1000)}s
+              </span>
+            </div>
+          )}
+          <div className={`${styles.intensityWrapper}${showVideo ? ` ${styles.intensityWrapperVideo}` : ''}`}>
+            <RadialGauge
+              value={state.intensity}
+              max={20}
+              color={phaseColor}
+              isBeat={isBeat}
             />
             <div
-              className={`${styles.intensityNumber}${isBeat ? ` ${styles.intensityNumberBeat}` : ''}`}
+              className={`${styles.intensityNumber}${showVideo ? ` ${styles.intensityNumberVideo}` : ''}${isBeat ? ` ${styles.intensityNumberBeat}` : ''}`}
               style={{ color: phaseColor }}
             >
               {state.intensity}
             </div>
           </div>
-          {/* Always keep VideoPanel mounted so video resumes from last position */}
-          {videoAvailable && (
-            <div className={styles.videoInline} style={showVideo ? undefined : { display: 'none' }}>
-              <VideoPanel
-                playlist={playlist}
-                phase={state.phase}
-                intensity={state.intensity}
+          {/* Waveform moves into the gauge row in video mode */}
+          {showVideo && (
+            <div className={styles.waveformInRow}>
+              <BassWaveform
+                bassEnergyRef={bassEnergyRef}
+                phaseColor={phaseColor}
                 isBeat={isBeat}
-                tauntText={state.begDenialTaunt}
               />
             </div>
           )}
         </div>
 
-        {/* Bass energy waveform strip */}
-        <div className={styles.waveformStrip}>
-          <BassWaveform
-            bassEnergyRef={bassEnergyRef}
-            phaseColor={phaseColor}
-            isBeat={isBeat}
-          />
-        </div>
+        {/* Taunt text — above video */}
+        {state.begDenialTaunt && (
+          <p className={styles.begTaunt} style={{ margin: 0 }}>{state.begDenialTaunt}</p>
+        )}
+
+        {/* Video panel below gauge area — always mounted so playback continues */}
+        {videoAvailable && (
+          <div className={styles.videoInline} style={showVideo ? undefined : { display: 'none' }}>
+            <VideoPanel
+              playlist={playlist}
+              phase={state.phase}
+              intensity={state.intensity}
+              isBeat={isBeat}
+            />
+          </div>
+        )}
+
+        {/* Bass energy waveform strip — text mode only (video mode has it in the gauge row) */}
+        {!showVideo && (
+          <div className={styles.waveformStrip}>
+            <BassWaveform
+              bassEnergyRef={bassEnergyRef}
+              phaseColor={phaseColor}
+              isBeat={isBeat}
+            />
+          </div>
+        )}
 
         {/* Encouragement text */}
         <EncouragementDisplay
@@ -297,7 +314,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
         )}
 
         {/* Per-device/toy panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0 0.25rem', maxHeight: '7rem', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0 0.25rem', maxHeight: '7rem', overflowY: 'auto', flexShrink: 0 }}>
           {state.devices.flatMap(slot => {
             const rowStyle = {
               display: 'flex',

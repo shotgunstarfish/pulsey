@@ -239,6 +239,9 @@ export function useBeatDetection(): BeatDetectionControls {
       audioRef.current.load();
       audioRef.current.play().catch(() => {});
       setCurrentTrackIndex(nextIndex);
+      // Reset BPM so we detect fresh tempo for the new track
+      beatTimestampsRef.current = [];
+      setBpm(0);
       // isPlaying stays true — playback continues uninterrupted
     }
 
@@ -255,6 +258,9 @@ export function useBeatDetection(): BeatDetectionControls {
     audio.src = track.url;
     audio.load();
     setCurrentTrackIndex(index);
+    // Reset BPM so we detect fresh tempo for the new track
+    beatTimestampsRef.current = [];
+    setBpm(0);
     if (autoPlay) {
       if (audioContextRef.current?.state === 'suspended') audioContextRef.current.resume();
       audio.play().catch(() => {});
