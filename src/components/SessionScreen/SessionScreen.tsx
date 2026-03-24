@@ -279,7 +279,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
           paused={state.paused}
         />
 
-        {/* Feeling buttons */}
+        {/* Feeling buttons + beg button inline */}
         <div className={styles.feelingLabel}>How close are you?</div>
         <div className={styles.feelingBar}>
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
@@ -298,11 +298,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
               {n}
             </button>
           ))}
-        </div>
-
-        {/* Beg button — DECISION phase, not yet granted, not yet begged */}
-        {state.phase === 'DECISION' && !state.releaseRolled && (
-          <div className={styles.begWrap}>
+          {state.phase === 'DECISION' && !state.releaseRolled && (
             <button
               className={styles.begBtn}
               disabled={state.hasBeggedThisDecision}
@@ -310,8 +306,8 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
             >
               {state.hasBeggedThisDecision ? 'DENIED' : 'BEG!'}
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Per-device/toy panel */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0 0.25rem', maxHeight: '7rem', overflowY: 'auto', flexShrink: 0 }}>
