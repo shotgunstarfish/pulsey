@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron'
+import { app, BrowserWindow, Menu, session } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -42,9 +42,17 @@ function createWindow(): void {
   }
 }
 
+// Allow video autoplay without user gesture requirement
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
 app.setName('AI Video Reel')
 
 app.whenReady().then(() => {
+  // Grant all permission requests (media autoplay, etc.)
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(true)
+  })
+
   createWindow()
 
   app.on('activate', () => {
