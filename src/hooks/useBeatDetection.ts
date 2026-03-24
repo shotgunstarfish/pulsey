@@ -96,6 +96,7 @@ export interface BeatDetectionControls {
   togglePlayback: () => void;
   nextTrack: () => void;
   prevTrack: () => void;
+  fadeOutAndStop: () => void;
 }
 
 export function useBeatDetection(): BeatDetectionControls {
@@ -390,6 +391,27 @@ export function useBeatDetection(): BeatDetectionControls {
     _loadTrack((currentTrackIndexRef.current - 1 + list.length) % list.length, isPlayingRef.current);
   }, [_loadTrack]);
 
+  const fadeOutAndStop = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || audio.paused) return;
+    const startVolume = audio.volume;
+    const STEPS = 40;                        // ~700 ms at 17.5 ms/step
+    const INTERVAL_MS = 700 / STEPS;
+    let step = 0;
+    const id = setInterval(() => {
+      step++;
+      const a = audioRef.current;
+      if (!a) { clearInterval(id); return; }
+      a.volume = Math.max(0, startVolume * (1 - step / STEPS));
+      if (step >= STEPS) {
+        clearInterval(id);
+        a.pause();
+        a.volume = 1;          // restore for next session
+        setIsPlaying(false);
+      }
+    }, INTERVAL_MS);
+  }, []);
+
   return {
     isBeat,
     isPlaying,
@@ -405,5 +427,6 @@ export function useBeatDetection(): BeatDetectionControls {
     togglePlayback,
     nextTrack,
     prevTrack,
+    fadeOutAndStop,
   };
 }

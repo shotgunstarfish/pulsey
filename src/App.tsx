@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useSessionEngine } from './hooks/useSessionEngine.ts';
 import { useKeyboardInput } from './hooks/useKeyboardInput.ts';
 import { useVideoPlaylist } from './hooks/useVideoPlaylist.ts';
@@ -15,7 +15,13 @@ export default function App() {
   const { state, send, deviceErrors, deviceIntensities } = useSessionEngine(music.isBeat, music.bpm);
   const { playlist, addFiles, removeFile, moveFile, clearCategory, clearAll } = useVideoPlaylist();
 
-  useKeyboardInput(send, state.phase, state.paused);
+  // Wrap send so EMERGENCY_STOP fades out music before halting
+  const wrappedSend = useCallback<typeof send>((action) => {
+    if (action.type === 'EMERGENCY_STOP') music.fadeOutAndStop();
+    send(action);
+  }, [send, music]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useKeyboardInput(wrappedSend, state.phase, state.paused);
 
   // Dispatch beat nudge to the session machine so intensity pulses with the music
   useEffect(() => {
@@ -35,11 +41,11 @@ export default function App() {
   function renderScreen() {
     switch (state.phase) {
       case 'IDLE':
-        return <IdleScreen send={send} />;
+        return <IdleScreen send={wrappedSend} />;
       case 'SETUP':
-        return <SetupScreen state={state} send={send} />;
+        return <SetupScreen state={state} send={wrappedSend} />;
       case 'HISTORY':
-        return <HistoryScreen send={send} />;
+        return <HistoryScreen send={wrappedSend} />;
       case 'PLAYLIST':
         return (
           <PlaylistScreen
@@ -50,14 +56,14 @@ export default function App() {
             clearCategory={clearCategory}
             clearAll={clearAll}
             music={music}
-            send={send}
+            send={wrappedSend}
           />
         );
       default:
         return (
           <SessionScreen
             state={state}
-            send={send}
+            send={wrappedSend}
             playlist={playlist}
             isBeat={music.isBeat}
             bassEnergyRef={music.bassEnergyRef}
@@ -78,7 +84,7 @@ export default function App() {
       <div className="titlebar-offset">
         {renderScreen()}
       </div>
-      <SplashOverlay splash={state.splash} send={send} />
+      <SplashOverlay splash={state.splash} send={wrappedSend} />
     </>
   );
 }
