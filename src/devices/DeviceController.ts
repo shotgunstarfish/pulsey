@@ -5,6 +5,7 @@ import type { PatternKeyframe } from '../engine/patternBlock.ts';
 export interface DeviceController {
   connect(): Promise<void>;
   vibrate(strength: number, toyId?: string): Promise<void>;  // 0-20; toyId='' broadcasts to all toys
+  sendActions(actions: Record<string, number>, toyId?: string): Promise<void>;  // multi-axis: {ActionName: level}
   stop(toyId?: string): Promise<void>;
   disconnect(): void;
 

@@ -5,6 +5,7 @@ import { computeIntensity, cooldownPulseRaw } from './intensityCurves.ts';
 import type { ToyPattern } from './toyPatterns.ts';
 export type { ToyPattern };
 import { defaultPatternForToyType } from './toyPatterns.ts';
+import { getDefaultPreset } from './patternPresets.ts';
 import type { RandomEvent } from './randomEvents.ts';
 import { shouldTriggerEvent, pickRandomEvent, isEventExpired } from './randomEvents.ts';
 
@@ -51,6 +52,7 @@ export interface ToyConfig {
   inputMode: 'auto' | 'beat';
   enabled: boolean;
   pattern: ToyPattern;
+  presetId?: string;
 }
 
 export interface DeviceSlot {
@@ -63,6 +65,7 @@ export interface DeviceSlot {
   toyConfigs: ToyConfig[];                 // per-toy settings (lovense mode); empty for mock
   inputMode: 'auto' | 'beat';             // hub-level input mode (mock mode + default for new toys)
   pattern: ToyPattern;                     // hub-level pattern (mock mode + default for new toys)
+  presetId?: string;                       // hub-level preset (mock mode + default for new toys)
 }
 
 // ── State ───────────────────────────────────────────────
@@ -93,6 +96,9 @@ export interface SessionState {
   curveIntensity: number;            // intensity from curve only, no beat boost — use this for smooth device control
   hasBeggedThisDecision: boolean;    // true after user begs in current DECISION phase
   begDenialTaunt: string | null;     // taunt text shown after a BEG denial
+  rampFactor: number;              // 1.0 = normal build speed, <1 = slowed, >1 = accelerated
+  decisionEntryIntensity: number;  // intensity when DECISION phase began, for smooth decay
+  cooldownEntryIntensity: number;  // intensity when COOLDOWN phase began, for smooth entry
 }
 
 // ── Actions ─────────────────────────────────────────────
@@ -123,7 +129,8 @@ export type SessionAction =
   | { type: 'GO_PLAYLIST' }
   | { type: 'SET_TOYS'; deviceId: string; toys: LovenseToy[] }
   | { type: 'SET_INPUT_MODE'; deviceId: string; inputMode: 'auto' | 'beat' }
-  | { type: 'UPDATE_TOY_CONFIG'; deviceId: string; toyId: string; patch: Partial<Pick<ToyConfig, 'intensityScale' | 'inputMode' | 'enabled' | 'pattern'>> }
+  | { type: 'UPDATE_TOY_CONFIG'; deviceId: string; toyId: string; patch: Partial<Pick<ToyConfig, 'intensityScale' | 'inputMode' | 'enabled' | 'pattern' | 'presetId'>> }
+  | { type: 'SET_PRESET'; deviceId: string; toyId?: string; presetId: string }
   | { type: 'BEG' };
 
 // ── Splash message pools ────────────────────────────────
@@ -203,6 +210,7 @@ export const DEFAULT_DEVICE: DeviceSlot = {
   toyConfigs: [],
   inputMode: 'auto',
   pattern: 'direct',
+  presetId: 'vibe-direct',
 };
 
 export const initialState: SessionState = {
@@ -231,6 +239,9 @@ export const initialState: SessionState = {
   curveIntensity: 0,
   hasBeggedThisDecision: false,
   begDenialTaunt: null,
+  rampFactor: 1.0,
+  decisionEntryIntensity: 0,
+  cooldownEntryIntensity: 0,
 };
 
 // ── Reducer ─────────────────────────────────────────────
@@ -269,6 +280,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
             toyConfigs: [],
             inputMode: 'auto' as const,
             pattern: 'direct' as const,
+            presetId: 'vibe-direct',
           },
         ],
       };
@@ -292,6 +304,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
           inputMode: device.inputMode,
           enabled: isConnected ? device.enabled : false,
           pattern: defaultPatternForToyType(toy.type),
+          presetId: getDefaultPreset(toy.type).id,
         };
       });
       return {
@@ -325,6 +338,26 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         ),
       };
 
+    case 'SET_PRESET': {
+      return {
+        ...state,
+        devices: state.devices.map(d => {
+          if (d.id !== action.deviceId) return d;
+          if (action.toyId) {
+            // Per-toy preset
+            return {
+              ...d,
+              toyConfigs: d.toyConfigs.map(tc =>
+                tc.toy.id === action.toyId ? { ...tc, presetId: action.presetId } : tc,
+              ),
+            };
+          }
+          // Hub-level preset (mock mode)
+          return { ...d, presetId: action.presetId };
+        }),
+      };
+    }
+
     case 'REMOVE_DEVICE':
       if (state.devices.length <= 1) return state;
       return { ...state, devices: state.devices.filter(d => d.id !== action.id) };
@@ -348,6 +381,9 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         phase: 'WARMUP',
         sessionStartedAt: Date.now(),
         phaseElapsedMs: 0,
+        rampFactor: 1.0,
+        decisionEntryIntensity: 0,
+        cooldownEntryIntensity: 0,
       };
 
     case 'END_SESSION':
@@ -407,6 +443,9 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         const intensity = level >= 7
           ? Math.max(0, state.intensity - (2 + Math.floor(state.teasingMultiplier)))
           : state.intensity;
+        const backoutRamp = level <= 3 ? (level === 1 ? 1.5 : level === 2 ? 1.4 : 1.2)
+          : level <= 6 ? (level === 4 ? 1.0 : level === 5 ? 0.85 : 0.65)
+          : (level === 7 ? 0.4 : 0.1);
         return {
           ...state,
           feelingLevel: level,
@@ -414,6 +453,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
           phaseElapsedMs: 0,
           intensity,
           teasingMultiplier: level >= 7 ? state.teasingMultiplier + 0.2 : state.teasingMultiplier,
+          rampFactor: backoutRamp,
           splash: splash(
             level >= 7 ? pick(SPLASH_FEELING_HIGH) : pick(SPLASH_FEELING_MID),
             level >= 7 ? 'purple' : 'blue',
@@ -439,26 +479,32 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
       }
 
       if (level >= 1 && level <= 3) {
+        const lowRamp = level === 1 ? 1.5 : level === 2 ? 1.4 : 1.2;
         return {
           ...state,
           feelingLevel: level,
           buildFloor: Math.min(state.buildFloor + 1, 12),
+          rampFactor: lowRamp,
           splash: splash(pick(SPLASH_FEELING_LOW), 'red'),
         };
       }
       if (level >= 4 && level <= 6) {
+        const midRamp = level === 4 ? 1.0 : level === 5 ? 0.85 : 0.65;
         return {
           ...state,
           feelingLevel: level,
+          rampFactor: midRamp,
           splash: splash(pick(SPLASH_FEELING_MID), 'blue'),
         };
       }
       if (level >= 7 && level <= 8) {
+        const highRamp = level === 7 ? 0.4 : 0.1;
         return {
           ...state,
           feelingLevel: level,
           intensity: Math.max(0, state.intensity - (2 + Math.floor(state.teasingMultiplier))),
           teasingMultiplier: state.teasingMultiplier + 0.2,
+          rampFactor: highRamp,
           splash: splash(pick(SPLASH_FEELING_HIGH), 'purple'),
         };
       }
@@ -476,6 +522,8 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
             hasBeggedThisDecision: false,
             begDenialTaunt: null,
             intensity: Math.max(5, state.intensity - 5),
+            decisionEntryIntensity: Math.max(5, state.intensity - 5),
+            cooldownEntryIntensity: Math.max(5, state.intensity - 5),
             splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
           };
         }
@@ -484,6 +532,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
           feelingLevel: level,
           phase: 'EDGE_CHECK',
           phaseElapsedMs: 0,
+          intensity: Math.max(8, state.intensity - 2),  // slight pullback on edge entry
           splash: splash(pick(SPLASH_FEELING_EDGE), 'gold'),
         };
       }
@@ -500,6 +549,9 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         releaseRolled: false,
         hasBeggedThisDecision: false,
         begDenialTaunt: null,
+        intensity: state.intensity,
+        decisionEntryIntensity: state.intensity,
+        cooldownEntryIntensity: state.intensity,
         splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
       };
     }
@@ -511,7 +563,8 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
           ...state,
           phase: 'COOLDOWN',
           phaseElapsedMs: 0,
-          intensity: 3,
+          intensity: state.intensity,
+          cooldownEntryIntensity: state.intensity,
           buildFloor: Math.min(state.buildFloor + 1, 12),
           buildDuration: Math.max(20_000, state.buildDuration * 0.9),
           cooldownDuration: state.edgeCount > 3
@@ -533,7 +586,8 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         ...state,
         phase: 'COOLDOWN',
         phaseElapsedMs: 0,
-        intensity: 5,
+        intensity: state.intensity,
+        cooldownEntryIntensity: state.intensity,
         buildFloor: Math.min(state.buildFloor + 1, 12),
         buildDuration: Math.max(20_000, state.buildDuration * 0.9),
         cooldownDuration: state.edgeCount > 3
@@ -573,6 +627,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         phase: 'BUILD',
         phaseElapsedMs: 0,
         intensity: state.buildFloor,
+        rampFactor: 1.0,
       };
 
     case 'TRIGGER_RANDOM_EVENT': {
@@ -642,6 +697,9 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         }
 
         case 'BUILD': {
+          // Apply rampFactor: feeling level controls build speed (0.1 = near-stopped, 1.5 = accelerated)
+          const buildPhaseElapsed = state.phaseElapsedMs + dt * Math.max(0.1, Math.min(2.0, state.rampFactor));
+
           // Check random events
           if (shouldTriggerEvent(state.phase, state.lastEventAt, newElapsed, state.activeEvent)) {
             const event = pickRandomEvent(newElapsed);
@@ -661,7 +719,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
             return {
               ...state,
               elapsedMs: newElapsed,
-              phaseElapsedMs: newPhaseElapsed,
+              phaseElapsedMs: buildPhaseElapsed,
               activeEvent: event,
               lastEventAt: event.startedAt,
               splash: eventSplash,
@@ -677,7 +735,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
             return {
               ...state,
               elapsedMs: newElapsed,
-              phaseElapsedMs: newPhaseElapsed,
+              phaseElapsedMs: buildPhaseElapsed,
               activeEvent: null,
               splash: wasHold
                 ? (holdOk ? splash(pick(SPLASH_HOLD_SUCCESS), 'gold') : splash(pick(SPLASH_HOLD_FAIL), 'red'))
@@ -689,7 +747,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
 
           // Active event overrides: don't advance curve during forced pause
           if (state.activeEvent?.type === 'FORCED_PAUSE') {
-            return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed, intensity: 0 };
+            return { ...state, elapsedMs: newElapsed, phaseElapsedMs: buildPhaseElapsed, intensity: 0 };
           }
 
           // Active spike override
@@ -697,13 +755,13 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
             return {
               ...state,
               elapsedMs: newElapsed,
-              phaseElapsedMs: newPhaseElapsed,
-              intensity: Math.min(20, computeIntensity(state.currentCurve, newPhaseElapsed, state.buildDuration, state.buildFloor, BUILD_CEILING) + 5),
+              phaseElapsedMs: buildPhaseElapsed,
+              intensity: Math.min(20, computeIntensity(state.currentCurve, buildPhaseElapsed, state.buildDuration, state.buildFloor, BUILD_CEILING) + 5),
             };
           }
 
           // Normal build: check if build duration exceeded → PLATEAU
-          if (newPhaseElapsed >= state.buildDuration) {
+          if (buildPhaseElapsed >= state.buildDuration) {
             return {
               ...state,
               elapsedMs: newElapsed,
@@ -715,12 +773,12 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
 
           const buildIntensity = computeIntensity(
             state.currentCurve,
-            newPhaseElapsed,
+            buildPhaseElapsed,
             state.buildDuration,
             state.buildFloor,
             BUILD_CEILING,
           );
-          return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed, intensity: buildIntensity };
+          return { ...state, elapsedMs: newElapsed, phaseElapsedMs: buildPhaseElapsed, intensity: buildIntensity };
         }
 
         case 'PLATEAU': {
@@ -773,6 +831,8 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
               hasBeggedThisDecision: false,
               begDenialTaunt: null,
               intensity: Math.max(5, BUILD_CEILING - 5),
+              decisionEntryIntensity: Math.max(5, BUILD_CEILING - 5),
+              cooldownEntryIntensity: Math.max(5, BUILD_CEILING - 5),
               splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
             };
           }
@@ -785,8 +845,8 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         }
 
         case 'EDGE_CHECK': {
-          // Brief pause — auto-confirm edge after 2 seconds
-          if (newPhaseElapsed >= 2000) {
+          // Brief pause — auto-confirm edge after 5 seconds
+          if (newPhaseElapsed >= 5000) {
             const newEdgeCount = state.edgeCount + 1;
             return {
               ...state,
@@ -797,7 +857,9 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
               releaseRolled: false,
               hasBeggedThisDecision: false,
               begDenialTaunt: null,
-              intensity: Math.max(5, state.intensity - 5),
+              intensity: state.intensity,  // DECISION tick will decay smoothly
+              decisionEntryIntensity: state.intensity,
+              cooldownEntryIntensity: state.intensity,
               splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
             };
           }
@@ -805,34 +867,31 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         }
 
         case 'DECISION': {
-          // Auto-transition after 3 seconds
-          if (newPhaseElapsed >= 3000) {
-            // Release and deny only valid at feeling level 8 or 9
+          if (newPhaseElapsed >= 6000) {
             const atEdge = (state.feelingLevel ?? 0) >= 8;
             if (atEdge && state.releaseRolled) {
-              return {
-                ...state,
-                elapsedMs: newElapsed,
-                phaseElapsedMs: 0,
-                phase: 'RELEASE',
-                intensity: 20,
-              };
+              return { ...state, elapsedMs: newElapsed, phaseElapsedMs: 0, phase: 'RELEASE', intensity: 20 };
             }
             return {
               ...state,
               elapsedMs: newElapsed,
               phaseElapsedMs: 0,
               phase: 'COOLDOWN',
-              intensity: 3,
+              intensity: state.intensity,  // carry current for COOLDOWN smooth entry
+              cooldownEntryIntensity: state.intensity,
               buildFloor: Math.min(state.buildFloor + 1, 12),
               buildDuration: Math.max(20_000, state.buildDuration * 0.9),
-              cooldownDuration: state.edgeCount > 3
-                ? Math.max(8_000, state.cooldownDuration * 0.95)
-                : state.cooldownDuration,
+              cooldownDuration: state.edgeCount > 3 ? Math.max(8_000, state.cooldownDuration * 0.95) : state.cooldownDuration,
               currentCurve: nextCurve(state.currentCurve),
             };
           }
-          return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed };
+          // Smooth intensity decay: from decisionEntryIntensity toward 8 over first 2.5s
+          const decayTarget = 8;
+          const decayDuration = 2500;
+          const decayProgress = Math.min(1, newPhaseElapsed / decayDuration);
+          const entry = state.decisionEntryIntensity > 0 ? state.decisionEntryIntensity : state.intensity;
+          const decayedInt = Math.max(decayTarget, Math.round(entry - (entry - decayTarget) * decayProgress));
+          return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed, intensity: decayedInt };
         }
 
         case 'COOLDOWN': {
@@ -843,10 +902,27 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
               phaseElapsedMs: 0,
               phase: 'BUILD',
               intensity: state.buildFloor,
+              rampFactor: 1.0,  // fresh start after cooldown
             };
           }
-          // Varied recovery pulses — dual-frequency wave between 1 and 6
-          const cdIntensity = Math.round(cooldownPulseRaw(newPhaseElapsed, state.cooldownDuration));
+
+          const cdProgress = newPhaseElapsed / state.cooldownDuration;
+          const ENTRY_RAMP_MS = 3000; // smooth ramp-down from entry level over first 3s
+          let cdIntensity: number;
+
+          if (newPhaseElapsed < ENTRY_RAMP_MS && state.cooldownEntryIntensity > 4) {
+            // Smooth entry: ramp from cooldownEntryIntensity down toward 4
+            const entryProgress = newPhaseElapsed / ENTRY_RAMP_MS;
+            cdIntensity = Math.round(state.cooldownEntryIntensity - (state.cooldownEntryIntensity - 4) * entryProgress);
+          } else if (cdProgress > 0.8) {
+            // Smooth exit: ramp from recovery pulse level up to buildFloor over last 20%
+            const exitProgress = (cdProgress - 0.8) / 0.2;
+            const pulseBase = Math.round(cooldownPulseRaw(newPhaseElapsed, state.cooldownDuration));
+            cdIntensity = Math.round(pulseBase + (state.buildFloor - pulseBase) * exitProgress);
+          } else {
+            cdIntensity = Math.round(cooldownPulseRaw(newPhaseElapsed, state.cooldownDuration));
+          }
+
           return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed, intensity: cdIntensity };
         }
 

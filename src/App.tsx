@@ -67,6 +67,7 @@ export default function App() {
             playlist={playlist}
             isBeat={music.isBeat}
             bassEnergyRef={music.bassEnergyRef}
+            analyserRef={music.analyserRef}
             bpm={music.bpm}
             deviceErrors={deviceErrors}
             deviceIntensities={deviceIntensities}

@@ -26,6 +26,15 @@ export class LovenseDevice implements DeviceController {
     await this.sendCommand('Function', `Vibrate:${clamped}`, toyId, 0);
   }
 
+  async sendActions(actions: Record<string, number>, toyId?: string): Promise<void> {
+    const actionStr = Object.entries(actions)
+      .filter(([, lvl]) => lvl > 0)
+      .map(([fn, lvl]) => `${fn}:${Math.max(0, Math.round(lvl))}`)
+      .join(',');
+    if (!actionStr) return;
+    await this.sendCommand('Function', actionStr, toyId, 0);
+  }
+
   async stop(toyId?: string): Promise<void> {
     // stopPrevious:1 (default) — we DO want to stop everything cleanly here
     await this.sendCommand('Function', 'Vibrate:0', toyId, 1);

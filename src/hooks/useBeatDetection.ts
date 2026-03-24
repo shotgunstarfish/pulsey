@@ -88,6 +88,7 @@ export interface BeatDetectionControls {
   currentTrackIndex: number;
   audioRef: RefObject<HTMLAudioElement | null>;
   bassEnergyRef: RefObject<number>;
+  analyserRef: RefObject<AnalyserNode | null>;
   bpm: number;
   addTracks: (files: FileList | File[]) => void;
   removeTrack: (index: number) => void;
@@ -419,6 +420,7 @@ export function useBeatDetection(): BeatDetectionControls {
     currentTrackIndex,
     audioRef,
     bassEnergyRef,
+    analyserRef,
     bpm,
     addTracks,
     removeTrack,
