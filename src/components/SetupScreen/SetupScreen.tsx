@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import type { SessionAction, SessionState, DeviceSlot, LovenseToy } from '../../engine/sessionMachine.ts';
-import { ALL_PATTERNS, PATTERN_LABELS, PATTERN_DESCRIPTIONS } from '../../engine/toyPatterns.ts';
+import { PATTERN_LABELS } from '../../engine/toyPatterns.ts';
+import { getPresetsForToy, getPresetById } from '../../engine/patternPresets.ts';
+import { getCapabilities } from '../../engine/toyCapabilities.ts';
+import type { ToyFunction } from '../../engine/toyCapabilities.ts';
+import { PatternPreview } from '../PatternPreview/PatternPreview.tsx';
 
 interface SetupScreenProps {
   state: SessionState;
@@ -16,6 +20,7 @@ interface DeviceCardProps {
 function DeviceCard({ slot, canRemove, send }: DeviceCardProps) {
   const [connectStatus, setConnectStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const isMock = slot.mode === 'mock';
   const toyConfigs = slot.toyConfigs;
 
@@ -276,6 +281,30 @@ function DeviceCard({ slot, canRemove, send }: DeviceCardProps) {
             </span>
           </div>
 
+          {/* Test Patterns toggle */}
+          {toyConfigs.length > 0 && (
+            <button
+              onClick={() => setShowPreview(prev => !prev)}
+              style={{
+                padding: '0.4rem 0.75rem',
+                background: showPreview ? 'var(--purple)' : 'var(--surface)',
+                color: showPreview ? '#fff' : 'var(--text-muted)',
+                border: '1px solid var(--border)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.8rem',
+              }}
+            >
+              {showPreview ? 'Hide Pattern Preview' : 'Test Patterns'}
+            </button>
+          )}
+
+          {/* Pattern preview (collapsible) */}
+          {showPreview && toyConfigs.length > 0 && (
+            <PatternPreview slot={slot} send={send} />
+          )}
+
           {/* Per-toy controls */}
           {toyConfigs.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -346,25 +375,47 @@ function DeviceCard({ slot, canRemove, send }: DeviceCardProps) {
                       }}
                     >BEAT</button>
                   </div>
-                  {/* Per-toy pattern selector */}
+                  {/* Per-toy preset selector */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Pattern</span>
-                    <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                      {ALL_PATTERNS.map(p => (
-                        <button
-                          key={p}
-                          title={PATTERN_DESCRIPTIONS[p]}
-                          onClick={() => send({ type: 'UPDATE_TOY_CONFIG', deviceId: slot.id, toyId: tc.toy.id, patch: { pattern: p } })}
-                          style={{
-                            padding: '0.25rem 0.45rem',
-                            background: tc.pattern === p ? 'var(--orange)' : 'var(--surface2)',
-                            color: tc.pattern === p ? '#000' : 'var(--text)',
-                            border: '1px solid var(--border)', borderRadius: '6px',
-                            cursor: 'pointer', fontWeight: 600, fontSize: '0.7rem',
-                          }}
-                        >{PATTERN_LABELS[p]}</button>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      Pattern Preset
+                      {getCapabilities(tc.toy.type).length > 1 && (
+                        <span style={{ marginLeft: '0.4rem', color: 'var(--purple)', fontWeight: 600 }}>
+                          ({getCapabilities(tc.toy.type).map((fn: ToyFunction) => fn.charAt(0).toUpperCase() + fn.slice(1)).join(' + ')})
+                        </span>
+                      )}
+                    </span>
+                    <select
+                      value={tc.presetId ?? ''}
+                      onChange={e => send({ type: 'SET_PRESET', deviceId: slot.id, toyId: tc.toy.id, presetId: e.target.value })}
+                      style={{
+                        padding: '0.35rem 0.5rem',
+                        background: 'var(--surface2)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '6px',
+                        color: 'var(--text)',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {getPresetsForToy(tc.toy.type).map(p => (
+                        <option key={p.id} value={p.id}>{p.name} — {p.description}</option>
                       ))}
-                    </div>
+                    </select>
+                    {tc.presetId && getPresetById(tc.presetId) && getCapabilities(tc.toy.type).length > 1 && (
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', paddingLeft: '0.2rem' }}>
+                        {getCapabilities(tc.toy.type).map((fn: ToyFunction) => {
+                          const axisCfg = getPresetById(tc.presetId!)?.axes[fn];
+                          if (!axisCfg) return null;
+                          return (
+                            <span key={fn} style={{ marginRight: '0.75rem' }}>
+                              {fn}: {PATTERN_LABELS[axisCfg.pattern]}
+                              {axisCfg.phaseOffsetMs > 0 ? ` +${axisCfg.phaseOffsetMs}ms` : ''}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -438,32 +489,28 @@ function DeviceCard({ slot, canRemove, send }: DeviceCardProps) {
             </div>
           </div>
 
-          {/* Pattern selector */}
+          {/* Pattern preset selector */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              {isMock ? 'Pattern' : 'Default Pattern (for new toys)'}
+              {isMock ? 'Pattern Preset' : 'Default Pattern Preset (for new toys)'}
             </span>
-            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-              {ALL_PATTERNS.map(p => (
-                <button
-                  key={p}
-                  title={PATTERN_DESCRIPTIONS[p]}
-                  onClick={() => patch({ pattern: p })}
-                  style={{
-                    flex: 1,
-                    padding: '0.4rem 0.3rem',
-                    background: slot.pattern === p ? 'var(--orange)' : 'var(--surface)',
-                    color: slot.pattern === p ? '#000' : 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.75rem',
-                    minWidth: 0,
-                  }}
-                >{PATTERN_LABELS[p]}</button>
+            <select
+              value={slot.presetId ?? 'vibe-direct'}
+              onChange={e => send({ type: 'SET_PRESET', deviceId: slot.id, presetId: e.target.value })}
+              style={{
+                padding: '0.4rem 0.5rem',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                color: 'var(--text)',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              {getPresetsForToy(null).map(p => (
+                <option key={p.id} value={p.id}>{p.name} — {p.description}</option>
               ))}
-            </div>
+            </select>
           </div>
         </>
       )}

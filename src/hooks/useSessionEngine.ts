@@ -4,6 +4,10 @@ import { useReducer, useRef, useEffect, useCallback, useState } from 'react';
 import { sessionReducer, initialState } from '../engine/sessionMachine.ts';
 import type { SessionState, SessionAction, Phase, DeviceSlot, LovenseToy, ToyConfig, ToyPattern } from '../engine/sessionMachine.ts';
 import { applyPattern } from '../engine/toyPatterns.ts';
+import type { ToyFunction } from '../engine/toyCapabilities.ts';
+import { getCapabilities, buildActionsMap, isMultiAxis } from '../engine/toyCapabilities.ts';
+import { getPresetById } from '../engine/patternPresets.ts';
+import { patternToPresetId } from '../engine/patternPresets.ts';
 import { saveSession } from '../engine/sessionHistory.ts';
 import type { DeviceController } from '../devices/DeviceController.ts';
 import { MockDevice } from '../devices/MockDevice.ts';
@@ -32,8 +36,9 @@ function parseKey(key: string): { slotId: string; toyId?: string } {
 
 type StoredSlot = Omit<DeviceSlot, 'toyConfigs' | 'pattern'> & {
   toys?: LovenseToy[];
-  toyConfigs?: (Omit<ToyConfig, 'pattern'> & { pattern?: ToyPattern })[];
+  toyConfigs?: (Omit<ToyConfig, 'pattern'> & { pattern?: ToyPattern; presetId?: string })[];
   pattern?: ToyPattern;
+  presetId?: string;
 };
 
 function loadSavedDevices(): DeviceSlot[] | null {
@@ -47,18 +52,25 @@ function loadSavedDevices(): DeviceSlot[] | null {
     }
     return (parsed as StoredSlot[]).map(slot => {
       const inputMode = slot.inputMode ?? 'auto';
-      const toyConfigs: ToyConfig[] = (slot.toyConfigs?.map(tc => ({
-        ...tc,
-        pattern: tc.pattern ?? 'direct',
-      })) ?? (
+      const toyConfigs: ToyConfig[] = (slot.toyConfigs?.map(tc => {
+        const resolvedPattern = tc.pattern ?? 'direct';
+        const resolvedPresetId = tc.presetId ?? patternToPresetId(resolvedPattern, tc.toy?.type);
+        return {
+          ...tc,
+          pattern: resolvedPattern,
+          presetId: resolvedPresetId,
+        };
+      }) ?? (
         slot.toys?.map(toy => ({
           toy,
           intensityScale: slot.intensityScale,
           inputMode,
           enabled: slot.enabled,
           pattern: 'direct' as ToyPattern,
+          presetId: patternToPresetId('direct', toy.type),
         })) ?? []
       ));
+      const slotPattern = slot.pattern ?? 'direct';
       return {
         id: slot.id,
         label: slot.label,
@@ -68,7 +80,8 @@ function loadSavedDevices(): DeviceSlot[] | null {
         enabled: slot.enabled,
         toyConfigs,
         inputMode,
-        pattern: slot.pattern ?? 'direct',
+        pattern: slotPattern,
+        presetId: slot.presetId ?? patternToPresetId(slotPattern),
       } satisfies DeviceSlot;
     });
   } catch {
@@ -123,6 +136,8 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
    * Read by: 50ms ticker (mock + PatternV2 fallback), deviceIntensities display.
    */
   const desiredLevelRef = useRef<Map<string, number>>(new Map());
+  /** Per-toy desired actions: key -> {ActionName: level} for multi-axis dispatch */
+  const desiredActionsRef = useRef<Map<string, Record<string, number>>>(new Map());
   /** Last value actually sent per key + timestamp — avoids re-sending the same level */
   const lastSentRef = useRef<Map<string, { level: number; time: number }>>(new Map());
   const KEEPALIVE_MS = 5_000;
@@ -280,6 +295,7 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
     // IDLE: stop everything
     if (phase === 'IDLE') {
       desiredLevelRef.current.clear();
+      desiredActionsRef.current.clear();
       blockScheduleRef.current.clear();
       for (const controller of devicesRef.current.values()) {
         controller.stopPattern?.().catch(() => {});
@@ -341,13 +357,24 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
                 && shouldUsePatternV2Phase(s.phase)) continue;
 
             const level = desired.get(key) ?? 0;
-            maybeSend(key, level, () =>
-              controller.vibrate(level, tc.toy.id)
-                .then(() => clearDeviceError(slot.id))
-                .catch((err: unknown) => {
-                  const msg = err instanceof Error ? err.message : String(err);
-                  setDeviceError(slot.id, `Vibrate failed: ${msg}`);
-                }));
+            const actions = desiredActionsRef.current.get(key);
+            if (actions && Object.keys(actions).length > 1) {
+              maybeSend(key, level, () =>
+                controller.sendActions(actions, tc.toy.id)
+                  .then(() => clearDeviceError(slot.id))
+                  .catch((err: unknown) => {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    setDeviceError(slot.id, `sendActions failed: ${msg}`);
+                  }));
+            } else {
+              maybeSend(key, level, () =>
+                controller.vibrate(level, tc.toy.id)
+                  .then(() => clearDeviceError(slot.id))
+                  .catch((err: unknown) => {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    setDeviceError(slot.id, `Vibrate failed: ${msg}`);
+                  }));
+            }
           }
         }
       }
@@ -409,19 +436,49 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
       // For Lovense PatternV2 devices in PatternV2 phases, the block scheduler
       // below will override these values. For all other devices, these are final.
       if (isSessionPhase(s.phase)) {
+        const deviceIntensity = s.curveIntensity + s.beatBoost * 0.35;
         for (const slot of s.devices) {
           if (slot.mode === 'mock') {
             if (!slot.enabled || slot.inputMode === 'beat') continue;
-            const patterned = applyPattern(slot.pattern, s.curveIntensity, s.elapsedMs, s.buildFloor, 20);
+            const patterned = applyPattern(slot.pattern, deviceIntensity, s.elapsedMs, s.buildFloor, 20);
             const raw = Math.round(patterned * slot.intensityScale);
-            desired.set(slot.id, s.curveIntensity > 0 ? Math.max(1, raw) : raw);
+            desired.set(slot.id, deviceIntensity > 0 ? Math.max(1, raw) : raw);
           } else {
             for (const tc of slot.toyConfigs) {
               if (!tc.enabled || tc.inputMode === 'beat') continue;
               const key = toyKey(slot.id, tc.toy.id);
-              const patterned = applyPattern(tc.pattern, s.curveIntensity, s.elapsedMs, s.buildFloor, 20);
-              const raw = Math.round(patterned * tc.intensityScale);
-              desired.set(key, s.curveIntensity > 0 ? Math.max(1, raw) : raw);
+              const preset = tc.presetId ? getPresetById(tc.presetId) : undefined;
+              const caps = getCapabilities(tc.toy.type);
+
+              if (preset && caps.length > 1) {
+                // Multi-axis: compute per-axis levels
+                const axisLevels: Partial<Record<ToyFunction, number>> = {};
+                for (const fn of caps) {
+                  const axisCfg = preset.axes[fn];
+                  if (!axisCfg) continue;
+                  const patterned = applyPattern(
+                    axisCfg.pattern,
+                    deviceIntensity,
+                    s.elapsedMs + axisCfg.phaseOffsetMs,
+                    s.buildFloor,
+                    20,
+                  );
+                  axisLevels[fn] = Math.round(patterned * axisCfg.intensityScale * tc.intensityScale);
+                }
+                desiredActionsRef.current.set(key, buildActionsMap(axisLevels));
+                // Primary axis level for display + rate-limiting
+                const primaryLevel = axisLevels[caps[0]] ?? 0;
+                desired.set(key, deviceIntensity > 0 ? Math.max(1, primaryLevel) : primaryLevel);
+              } else {
+                // Single-axis: existing logic with preset fallback
+                const axisCfg = preset?.axes[caps[0] as ToyFunction];
+                const pattern = axisCfg?.pattern ?? tc.pattern ?? 'direct';
+                const axisScale = axisCfg?.intensityScale ?? 1.0;
+                const patterned = applyPattern(pattern, deviceIntensity, s.elapsedMs, s.buildFloor, 20);
+                const raw = Math.round(patterned * axisScale * tc.intensityScale);
+                desired.set(key, deviceIntensity > 0 ? Math.max(1, raw) : raw);
+                desiredActionsRef.current.delete(key);
+              }
             }
           }
         }
@@ -436,6 +493,9 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
 
           for (const tc of slot.toyConfigs) {
             if (!tc.enabled || tc.inputMode === 'beat') continue;
+
+            // Skip PatternV2 for multi-axis toys (firmware can only do single-axis via PatternV2)
+            if (isMultiAxis(tc.toy.type)) continue;
 
             const key = toyKey(slot.id, tc.toy.id);
             const schedule = blockScheduleRef.current.get(key);

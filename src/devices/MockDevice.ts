@@ -20,6 +20,13 @@ export class MockDevice implements DeviceController {
     console.log(`[MockDevice] vibrate(${strength})`);
   }
 
+  async sendActions(actions: Record<string, number>, _toyId?: string): Promise<void> {
+    if (!this.connected) return;
+    await this.simulateLatency();
+    const str = Object.entries(actions).map(([fn, lvl]) => `${fn}:${lvl}`).join(', ');
+    console.log(`[MockDevice] sendActions(${str})`);
+  }
+
   async stop(_toyId?: string): Promise<void> {
     await this.simulateLatency();
     console.log('[MockDevice] stop');

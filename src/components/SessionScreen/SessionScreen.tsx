@@ -1,15 +1,15 @@
 import { useRef } from 'react';
 import type { RefObject } from 'react';
 import type { SessionState, SessionAction, ToyConfig } from '../../engine/sessionMachine.ts';
-import { ALL_PATTERNS, PATTERN_LABELS } from '../../engine/toyPatterns.ts';
-import type { ToyPattern } from '../../engine/toyPatterns.ts';
+import { PATTERN_LABELS } from '../../engine/toyPatterns.ts';
+import { getPresetsForToy, getPresetById } from '../../engine/patternPresets.ts';
 import type { PlaylistStore } from '../../hooks/useVideoPlaylist.ts';
 import { hasAnyVideos } from '../../hooks/useVideoPlaylist.ts';
 import { getEventRemainingMs } from '../../engine/randomEvents.ts';
 import { getReleaseChance } from '../../engine/diceRoll.ts';
 import { VideoPanel } from '../VideoPanel/VideoPanel.tsx';
 import { EncouragementDisplay } from '../EncouragementDisplay/EncouragementDisplay.tsx';
-import { BassWaveform } from '../BassWaveform/BassWaveform.tsx';
+import { EnergyEqualizer } from '../EnergyEqualizer/EnergyEqualizer.tsx';
 import { SessionBackground } from '../SessionBackground/SessionBackground.tsx';
 import { RadialGauge } from './RadialGauge.tsx';
 import styles from './SessionScreen.module.css';
@@ -20,6 +20,7 @@ interface SessionScreenProps {
   playlist: PlaylistStore;
   isBeat: boolean;
   bassEnergyRef: RefObject<number>;
+  analyserRef: RefObject<AnalyserNode | null>;
   bpm: number;
   deviceErrors: Record<string, string>;
   deviceIntensities: Record<string, number>;
@@ -64,24 +65,32 @@ function ModeToggle({ inputMode, onAuto, onBeat }: { inputMode: 'auto' | 'beat';
   );
 }
 
-function PatternPicker({ current, onChange }: { current: ToyPattern; onChange: (p: ToyPattern) => void }) {
+function PresetPicker({ toyType, currentPresetId, onChange }: {
+  toyType?: string | null;
+  currentPresetId?: string;
+  onChange: (presetId: string) => void;
+}) {
+  const presets = getPresetsForToy(toyType);
   return (
-    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-      {ALL_PATTERNS.map(p => (
-        <button
-          key={p}
-          title={PATTERN_LABELS[p]}
-          onClick={() => onChange(p)}
-          style={{
-            padding: '0.15rem 0.35rem',
-            background: current === p ? 'var(--orange)' : 'var(--surface)',
-            color: current === p ? '#000' : 'var(--text-muted)',
-            border: '1px solid var(--border)', borderRadius: '4px',
-            cursor: 'pointer', fontWeight: 600, fontSize: '0.65rem',
-          }}
-        >{PATTERN_LABELS[p].slice(0, 3).toUpperCase()}</button>
+    <select
+      value={currentPresetId ?? ''}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        padding: '0.15rem 0.35rem',
+        background: 'var(--surface)',
+        color: 'var(--text-muted)',
+        border: '1px solid var(--border)',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontWeight: 600,
+        fontSize: '0.65rem',
+        maxWidth: '10rem',
+      }}
+    >
+      {presets.map(p => (
+        <option key={p.id} value={p.id}>{p.name}</option>
       ))}
-    </div>
+    </select>
   );
 }
 
@@ -105,7 +114,7 @@ const PHASE_DURATION_ESTIMATE: Record<string, number> = {
   PAUSED: 60_000,
 };
 
-export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bpm, deviceErrors, deviceIntensities }: SessionScreenProps) {
+export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, analyserRef, bpm, deviceErrors, deviceIntensities }: SessionScreenProps) {
   const phaseColor = PHASE_COLORS[state.phase] ?? 'var(--text)';
   const eventRemaining = state.activeEvent
     ? getEventRemainingMs(state.activeEvent, state.elapsedMs)
@@ -202,6 +211,17 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
 
         {/* Center: intensity gauge (+ waveform inline in video mode) */}
         <div className={`${showVideo ? styles.gaugeAreaVideo : styles.gaugeArea}${isBeat ? ` ${styles.gaugeAreaBeat}` : ''}`}>
+          {/* Equalizer canvas — absolutely fills the gauge area, bars at bottom, particles fly upward */}
+          {!showVideo && (
+            <EnergyEqualizer
+              analyserRef={analyserRef}
+              bassEnergyRef={bassEnergyRef}
+              phaseColor={phaseColor}
+              isBeat={isBeat}
+              intensity={state.intensity}
+              mode="full"
+            />
+          )}
           {/* Event banner — absolutely overlaid so it doesn't add vertical height */}
           {state.activeEvent && (
             <div className={styles.eventBanner}>
@@ -215,7 +235,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
               </span>
             </div>
           )}
-          <div className={`${styles.intensityWrapper}${showVideo ? ` ${styles.intensityWrapperVideo}` : ''}`}>
+          <div className={`${styles.intensityWrapper}${showVideo ? ` ${styles.intensityWrapperVideo}` : ''}`} style={{ position: 'relative', zIndex: 1 }}>
             <RadialGauge
               value={state.intensity}
               max={20}
@@ -232,10 +252,13 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
           {/* Waveform moves into the gauge row in video mode */}
           {showVideo && (
             <div className={styles.waveformInRow}>
-              <BassWaveform
+              <EnergyEqualizer
+                analyserRef={analyserRef}
                 bassEnergyRef={bassEnergyRef}
                 phaseColor={phaseColor}
                 isBeat={isBeat}
+                intensity={state.intensity}
+                mode="compact"
               />
             </div>
           )}
@@ -253,17 +276,6 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
               playlist={playlist}
               phase={state.phase}
               intensity={state.intensity}
-              isBeat={isBeat}
-            />
-          </div>
-        )}
-
-        {/* Bass energy waveform strip — text mode only (video mode has it in the gauge row) */}
-        {!showVideo && (
-          <div className={styles.waveformStrip}>
-            <BassWaveform
-              bassEnergyRef={bassEnergyRef}
-              phaseColor={phaseColor}
               isBeat={isBeat}
             />
           </div>
@@ -335,7 +347,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
                       {deviceIntensities[slot.id] ?? 0}
                     </span>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginLeft: 'auto' }}>
-                      {PATTERN_LABELS[slot.pattern]}
+                      {getPresetById(slot.presetId ?? '')?.name ?? PATTERN_LABELS[slot.pattern]}
                     </span>
                     <ModeToggle
                       inputMode={slot.inputMode}
@@ -343,7 +355,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
                       onBeat={() => send({ type: 'SET_INPUT_MODE', deviceId: slot.id, inputMode: 'beat' })}
                     />
                   </div>
-                  <PatternPicker current={slot.pattern} onChange={p => send({ type: 'UPDATE_DEVICE', id: slot.id, patch: { pattern: p } })} />
+                  <PresetPicker toyType={null} currentPresetId={slot.presetId} onChange={presetId => send({ type: 'SET_PRESET', deviceId: slot.id, presetId })} />
                 </div>,
               ];
             }
@@ -381,7 +393,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
                       🔋{tc.toy.battery}%
                     </span>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                      {PATTERN_LABELS[tc.pattern]}
+                      {getPresetById(tc.presetId ?? '')?.name ?? PATTERN_LABELS[tc.pattern]}
                     </span>
                     <ModeToggle
                       inputMode={tc.inputMode}
@@ -389,7 +401,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, bp
                       onBeat={() => send({ type: 'UPDATE_TOY_CONFIG', deviceId: slot.id, toyId: tc.toy.id, patch: { inputMode: 'beat' } })}
                     />
                   </div>
-                  <PatternPicker current={tc.pattern} onChange={p => send({ type: 'UPDATE_TOY_CONFIG', deviceId: slot.id, toyId: tc.toy.id, patch: { pattern: p } })} />
+                  <PresetPicker toyType={tc.toy.type} currentPresetId={tc.presetId} onChange={presetId => send({ type: 'SET_PRESET', deviceId: slot.id, toyId: tc.toy.id, presetId })} />
                 </div>
               );
             });

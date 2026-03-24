@@ -47,6 +47,10 @@ interface Props {
 }
 
 export function SessionBackground({ phaseColor, isBeat, intensity, bassEnergyRef }: Props) {
+  const dotRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const phaseRgbRef = useRef(rgb(phaseColor));
+  phaseRgbRef.current = rgb(phaseColor);
+
   const beatKeyRef  = useRef(0);
   const prevBeatRef = useRef(false);
   if (isBeat && !prevBeatRef.current) beatKeyRef.current++;
@@ -71,6 +75,22 @@ export function SessionBackground({ phaseColor, isBeat, intensity, bassEnergyRef
 
     const PULSE_WINDOW_MS = 10_000; // sustained elevation window
 
+    // --- Sparkle state (persistent across frames, not across re-renders) ---
+    const SPARKLE_COLORS_LOCAL = ['#ffffff', '#ffe4b5', '#b0e0e6', '#dda0dd', '#e6e6fa', '#98fb98'];
+    // Pre-parsed RGB for fast per-frame access
+    const SPARKLE_RGBS: Array<[number,number,number]> = SPARKLE_COLORS_LOCAL.map(hex => {
+      const n = parseInt(hex.replace('#', ''), 16);
+      return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+    });
+    // Disco-style fade-in/fade-out highlight state per dot
+    type HighlightState = { elapsed: number; total: number; r: number; g: number; b: number };
+    const highlights: Array<HighlightState | null> = new Array(DOTS.length).fill(null);
+
+    // --- Beat momentum tracking (inter-beat intervals → how fast/energetic beats are) ---
+    const beatIntervalHistory: number[] = [];
+    let lastBeatTimeMs = 0;
+    let beatMomentum = 0; // 0-1: 0 = slow/quiet, 1 = fast/energetic
+
     function tick() {
       rafRef.current = requestAnimationFrame(tick);
 
@@ -81,8 +101,23 @@ export function SessionBackground({ phaseColor, isBeat, intensity, bassEnergyRef
       if (beat && !prevBeatRaf.current) {
         beatBoostRef.current = 4.5;
         lastBeatMsRef.current = now;
+
+        // Track inter-beat interval to compute momentum
+        const interval = now - lastBeatTimeMs;
+        if (lastBeatTimeMs > 0 && interval > 100 && interval < 2500) {
+          beatIntervalHistory.push(interval);
+          if (beatIntervalHistory.length > 8) beatIntervalHistory.shift();
+          const avg = beatIntervalHistory.reduce((a, b) => a + b, 0) / beatIntervalHistory.length;
+          const bpmLocal = 60000 / avg;
+          // Map 70–160 BPM → momentum 0–1
+          beatMomentum = Math.min(1, Math.max(0, (bpmLocal - 70) / 90));
+        }
+        lastBeatTimeMs = now;
       }
       prevBeatRaf.current = beat;
+
+      // Momentum decays very slowly (persists across several seconds)
+      beatMomentum *= 0.9985;
 
       // Per-beat spike decays in ~400 ms
       beatBoostRef.current = Math.max(1.0, beatBoostRef.current * 0.92);
@@ -92,8 +127,43 @@ export function SessionBackground({ phaseColor, isBeat, intensity, bassEnergyRef
       const pulseActivity = Math.max(0, 1 - msSinceBeat / PULSE_WINDOW_MS);
 
       const energy   = Math.min(1, bassEnergyRef.current ?? 0);
-      // Base speed elevated by music energy + sustained pulse activity
-      const speedMult = (0.5 + energy * 1.5 + pulseActivity * 1.5) * beatBoostRef.current;
+      // Base speed elevated by music energy + sustained pulse + beat momentum
+      const speedMult = (0.5 + energy * 1.5 + pulseActivity * 1.5 + beatMomentum * 0.8) * beatBoostRef.current;
+
+      // --- Disco-style dot highlights: fade in → hold → fade out on each beat ---
+      if (beat && !prevBeatRaf.current) {
+        const count = Math.round(4 + beatMomentum * 12);
+        const indices = Array.from({ length: DOTS.length }, (_, i) => i)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, count);
+        for (const idx of indices) {
+          if (!highlights[idx]) {
+            const [hr, hg, hb] = SPARKLE_RGBS[Math.floor(Math.random() * SPARKLE_RGBS.length)];
+            highlights[idx] = { elapsed: 0, total: 22 + Math.floor(Math.random() * 28), r: hr, g: hg, b: hb };
+          }
+        }
+      }
+
+      // Update and apply highlight fade
+      const r_local = phaseRgbRef.current;
+      for (let di = 0; di < DOTS.length; di++) {
+        const el = dotRefs.current[di];
+        if (!el) continue;
+        const hl = highlights[di];
+        if (hl) {
+          hl.elapsed++;
+          const t = hl.elapsed / hl.total;
+          const alpha = t < 0.25 ? t / 0.25 : t < 0.70 ? 1.0 : (1 - t) / 0.30;
+          if (hl.elapsed >= hl.total) {
+            highlights[di] = null;
+            el.style.background = `rgba(${r_local}, 0.18)`;
+          } else {
+            el.style.background = `rgba(${hl.r},${hl.g},${hl.b},${(alpha * 0.72).toFixed(3)})`;
+          }
+        } else {
+          el.style.background = `rgba(${r_local}, 0.18)`;
+        }
+      }
 
       ORB_PARAMS.forEach((p, i) => {
         const ph = phasesRef.current[i];
@@ -159,6 +229,7 @@ export function SessionBackground({ phaseColor, isBeat, intensity, bassEnergyRef
       {DOTS.map((dot, i) => (
         <div
           key={i}
+          ref={el => { dotRefs.current[i] = el; }}
           className={`${styles.dot} ${isBeat ? styles.dotBeat : ''}`}
           style={{
             left:   `${dot.x}%`,
