@@ -9,7 +9,7 @@ export function IdleScreen({ send }: IdleScreenProps) {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        <h1 className={styles.title}>EDGE SESSION</h1>
+        <h1 className={styles.title}>Pulse Session</h1>
         <p className={styles.subtitle}>Control. Denial. Release.</p>
         <div className={styles.actions}>
           <button

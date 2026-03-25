@@ -264,8 +264,8 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, an
           )}
         </div>
 
-        {/* Taunt text — above video */}
-        {state.begDenialTaunt && (
+        {/* Taunt text — only shown while still in DECISION */}
+        {state.begDenialTaunt && state.phase === 'DECISION' && (
           <p className={styles.begTaunt} style={{ margin: 0 }}>{state.begDenialTaunt}</p>
         )}
 
