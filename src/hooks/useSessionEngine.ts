@@ -20,7 +20,7 @@ import {
 } from '../engine/patternBlock.ts';
 import type { PatternBlock, BlockGenParams } from '../engine/patternBlock.ts';
 
-const DEVICE_CONFIG_KEY = 'ai-video-reel:devices';
+const DEVICE_CONFIG_KEY = 'pulse:devices';
 
 /** Composite key: `${slotId}:${toyId}` for lovense toys, `slotId` for mock */
 function toyKey(slotId: string, toyId?: string): string {

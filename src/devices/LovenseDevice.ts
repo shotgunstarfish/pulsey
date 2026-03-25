@@ -83,7 +83,7 @@ export class LovenseDevice implements DeviceController {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-platform': 'ai-video-reel',
+        'X-platform': 'pulse',
       },
       body: JSON.stringify({
         command,
@@ -110,7 +110,7 @@ export class LovenseDevice implements DeviceController {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-platform': 'ai-video-reel',
+        'X-platform': 'pulse',
       },
       body: JSON.stringify(body),
     });

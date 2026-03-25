@@ -95,6 +95,11 @@ export function getCapabilities(toyType: string | null | undefined): ToyFunction
   return TOY_CAPABILITIES[key] ?? ['vibrate'];
 }
 
+/** Returns true if the toy type is explicitly recognized (has tailored capability/preset data). */
+export function isKnownToyType(toyType: string | null | undefined): boolean {
+  return (toyType ?? '').toLowerCase() in TOY_CAPABILITIES;
+}
+
 /**
  * Build a Lovense Function API action string from ToyFunction->level (0-20 scale) pairs.
  * Scales pump/depth from 0-20 to their hardware range internally.

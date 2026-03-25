@@ -2,7 +2,7 @@
 
 import type { VideoCategory } from '../hooks/useVideoPlaylist.ts';
 
-const DB_NAME = 'ai-video-reel-playlist';
+const DB_NAME = 'pulse-playlist';
 const DB_VERSION = 1;
 const STORE = 'videos';
 

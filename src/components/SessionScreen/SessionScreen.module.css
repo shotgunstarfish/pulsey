@@ -442,13 +442,19 @@
   width: 100%;
 }
 
+@keyframes begTauntIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .begTaunt {
   margin: 0.5rem 0 0;
-  font-size: 0.85rem;
-  font-style: italic;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--red);
   text-align: center;
-  opacity: 0.85;
-  animation: begPulse 2.5s ease-in-out infinite;
   flex-shrink: 0;
+  animation: begTauntIn 0.25s ease-out forwards;
 }

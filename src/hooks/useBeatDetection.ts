@@ -13,7 +13,7 @@ const BEAT_THRESHOLD = 1.4;
 
 // ── IndexedDB persistence ─────────────────────────────────────────────────────
 
-const IDB_NAME  = 'ai-video-reel:music';
+const IDB_NAME  = 'pulse:music';
 const IDB_STORE = 'tracks';
 
 interface IDBTrackRecord {
@@ -264,8 +264,10 @@ export function useBeatDetection(): BeatDetectionControls {
     beatTimestampsRef.current = [];
     setBpm(0);
     if (autoPlay) {
-      if (audioContextRef.current?.state === 'suspended') audioContextRef.current.resume();
-      audio.play().catch(() => {});
+      const resume = audioContextRef.current?.state === 'suspended'
+        ? audioContextRef.current.resume()
+        : Promise.resolve();
+      resume.then(() => audio.play().catch(() => {}));
       setIsPlaying(true);
     }
   }, []);
@@ -366,13 +368,15 @@ export function useBeatDetection(): BeatDetectionControls {
     if (!audio || tracksRef.current.length === 0) return;
 
     if (audio.paused) {
-      if (audioContextRef.current?.state === 'suspended') audioContextRef.current.resume();
       // If no src set yet, load the current track
       if (!audio.src || audio.src === window.location.href) {
         const track = tracksRef.current[currentTrackIndexRef.current];
         if (track) { audio.src = track.url; audio.load(); }
       }
-      audio.play().catch(() => {});
+      const resume = audioContextRef.current?.state === 'suspended'
+        ? audioContextRef.current.resume()
+        : Promise.resolve();
+      resume.then(() => audio.play().catch(() => {}));
       setIsPlaying(true);
     } else {
       audio.pause();

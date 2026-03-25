@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { SessionAction, SessionState, DeviceSlot, LovenseToy } from '../../engine/sessionMachine.ts';
 import { PATTERN_LABELS } from '../../engine/toyPatterns.ts';
 import { getPresetsForToy, getPresetById } from '../../engine/patternPresets.ts';
-import { getCapabilities } from '../../engine/toyCapabilities.ts';
+import { getCapabilities, isKnownToyType } from '../../engine/toyCapabilities.ts';
 import type { ToyFunction } from '../../engine/toyCapabilities.ts';
 import { PatternPreview } from '../PatternPreview/PatternPreview.tsx';
 
@@ -331,8 +331,11 @@ function DeviceCard({ slot, canRemove, send }: DeviceCardProps) {
                       width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
                       background: tc.toy.status === 1 ? 'var(--green)' : 'var(--text-muted)',
                     }} />
-                    <span style={{ flex: 1, color: 'var(--text)', fontWeight: 600 }}>
+                    <span style={{ flex: 1, color: 'var(--text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                       {tc.toy.nickName || tc.toy.name || tc.toy.type}
+                      {isKnownToyType(tc.toy.type) && (
+                        <span style={{ color: 'var(--green)', fontSize: '0.75rem', fontWeight: 700 }} title="Pattern generator available">✓</span>
+                      )}
                     </span>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
                       🔋 {tc.toy.battery}%
@@ -518,6 +521,160 @@ function DeviceCard({ slot, canRemove, send }: DeviceCardProps) {
   );
 }
 
+// ─── Setup Guide panel ────────────────────────────────────────────────────────
+
+const STEPS = [
+  {
+    n: '1',
+    title: 'Download Lovense Remote',
+    body: 'Install the free Lovense Remote app from the App Store (iPhone) or Google Play (Android).',
+  },
+  {
+    n: '2',
+    title: 'Connect your toy',
+    body: 'Open the app, tap the + icon, and pair your Lovense toy via Bluetooth. Confirm it shows as online.',
+  },
+  {
+    n: '3',
+    title: 'Open Game Mode',
+    ios:  'Tap the Discover tab at the bottom → tap Game Mode → toggle Enable LAN on.',
+    android: 'Tap the Discover tab at the bottom → tap Game Mode → toggle Enable LAN on.',
+  },
+  {
+    n: '4',
+    title: 'Note the IP & port',
+    body: 'The app shows your phone\'s local IP (e.g. 192.168.1.42) and port. Default HTTP port is 20010.',
+  },
+  {
+    n: '5',
+    title: 'Same Wi-Fi required',
+    body: 'Your phone and this computer must be on the same Wi-Fi network. Hotspot or LAN both work.',
+  },
+  {
+    n: '6',
+    title: 'Test Connection',
+    body: 'Enter the IP + port 20010 on the left and click Test Connection. Your toys will appear automatically.',
+  },
+];
+
+const TIPS = [
+  'Game Mode (Enable LAN) does not persist — you must re-toggle it every time you reopen the app or reconnect a toy.',
+  'Android: go to Settings → Battery → Battery Optimization, find Lovense Remote, and set it to Unrestricted.',
+  'iPhone: keep Lovense Remote in the foreground during use — iOS suspends the local server when the app is backgrounded.',
+  'Connection refused? Check Windows Firewall — add an inbound rule allowing TCP on port 34567.',
+];
+
+function SetupGuide() {
+  const [tab, setTab] = useState<'ios' | 'android'>('ios');
+  const [tipIdx] = useState(() => Math.floor(Math.random() * TIPS.length));
+
+  const tabBtn = (t: 'ios' | 'android', label: string) => (
+    <button
+      onClick={() => setTab(t)}
+      style={{
+        flex: 1,
+        padding: '0.45rem',
+        background: tab === t ? 'var(--purple)' : 'var(--surface2)',
+        color: tab === t ? '#fff' : 'var(--text-muted)',
+        border: '1px solid var(--border)',
+        borderRadius: '7px',
+        cursor: 'pointer',
+        fontWeight: 700,
+        fontSize: '0.8rem',
+        transition: 'background 0.15s',
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderRadius: '16px',
+      padding: '2rem',
+      width: '340px',
+      flexShrink: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '1.25rem',
+      alignSelf: 'flex-start',
+    }}>
+      <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text)' }}>
+        Lovense Setup Guide
+      </h3>
+
+      {/* Platform tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        {tabBtn('ios', '🍎 iPhone / iOS')}
+        {tabBtn('android', '🤖 Android')}
+      </div>
+
+      {/* Steps */}
+      <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+        {STEPS.map((s, i) => (
+          <li key={i} style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+            <span style={{
+              flexShrink: 0,
+              width: '22px',
+              height: '22px',
+              borderRadius: '50%',
+              background: 'var(--purple)',
+              color: '#fff',
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: '1px',
+            }}>
+              {s.n}
+            </span>
+            <div>
+              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: '0.18rem' }}>
+                {s.title}
+              </div>
+              <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                {'ios' in s && 'android' in s
+                  ? (tab === 'ios' ? s.ios : s.android)
+                  : s.body}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      {/* Divider */}
+      <div style={{ borderTop: '1px solid var(--border)' }} />
+
+      {/* Tip */}
+      <div style={{
+        background: 'var(--surface2)',
+        border: '1px solid var(--border)',
+        borderRadius: '8px',
+        padding: '0.65rem 0.8rem',
+        display: 'flex',
+        gap: '0.5rem',
+        alignItems: 'flex-start',
+      }}>
+        <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>💡</span>
+        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+          {TIPS[tipIdx]}
+        </span>
+      </div>
+
+      {/* Lovense app store links note */}
+      <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>
+        Search <strong style={{ color: 'var(--text)' }}>Lovense Remote</strong> in the{' '}
+        {tab === 'ios' ? 'App Store' : 'Google Play Store'} — it\'s free.
+      </p>
+    </div>
+  );
+}
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
+
 export function SetupScreen({ state, send }: SetupScreenProps) {
   const canRemove = state.devices.length > 1;
 
@@ -530,59 +687,72 @@ export function SetupScreen({ state, send }: SetupScreenProps) {
       overflowY: 'auto',
       padding: '2rem',
     }}>
+      {/* Two-column layout: device cards left, guide right */}
       <div style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: '16px',
-        padding: '2.5rem 3rem',
-        maxWidth: '520px',
+        display: 'flex',
+        gap: '1.5rem',
+        alignItems: 'flex-start',
         width: '100%',
+        maxWidth: '900px',
       }}>
-        <h2 style={{ margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 700 }}>
-          Device Setup
-        </h2>
+        {/* Left — device cards */}
+        <div style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: '16px',
+          padding: '2.5rem 3rem',
+          flex: 1,
+          minWidth: 0,
+        }}>
+          <h2 style={{ margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 700 }}>
+            Device Setup
+          </h2>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {state.devices.map(slot => (
-            <DeviceCard key={slot.id} slot={slot} canRemove={canRemove} send={send} />
-          ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {state.devices.map(slot => (
+              <DeviceCard key={slot.id} slot={slot} canRemove={canRemove} send={send} />
+            ))}
+          </div>
+
+          <button
+            onClick={() => send({ type: 'ADD_DEVICE' })}
+            style={{
+              display: 'block',
+              width: '100%',
+              margin: '1rem 0 0',
+              padding: '0.75rem',
+              background: 'var(--surface2)',
+              color: 'var(--text-muted)',
+              border: '1px dashed var(--border)',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+            }}
+          >
+            + Add Device
+          </button>
+
+          <button
+            onClick={() => send({ type: 'GO_IDLE' })}
+            style={{
+              display: 'block',
+              margin: '2rem auto 0',
+              padding: '0.6rem 2rem',
+              background: 'var(--surface2)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+            }}
+          >
+            Back
+          </button>
         </div>
 
-        <button
-          onClick={() => send({ type: 'ADD_DEVICE' })}
-          style={{
-            display: 'block',
-            width: '100%',
-            margin: '1rem 0 0',
-            padding: '0.75rem',
-            background: 'var(--surface2)',
-            color: 'var(--text-muted)',
-            border: '1px dashed var(--border)',
-            borderRadius: '10px',
-            cursor: 'pointer',
-            fontSize: '0.9rem',
-            fontWeight: 600,
-          }}
-        >
-          + Add Device
-        </button>
-
-        <button
-          onClick={() => send({ type: 'GO_IDLE' })}
-          style={{
-            display: 'block',
-            margin: '2rem auto 0',
-            padding: '0.6rem 2rem',
-            background: 'var(--surface2)',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontSize: '0.9rem',
-          }}
-        >
-          Back
-        </button>
+        {/* Right — setup guide */}
+        <SetupGuide />
       </div>
     </div>
   );

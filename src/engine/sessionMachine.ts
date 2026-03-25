@@ -220,7 +220,7 @@ export const initialState: SessionState = {
   edgeCount: 0,
   feelingLevel: null,
   teasingMultiplier: 1,
-  buildFloor: 3,
+  buildFloor: 2,
   buildDuration: INITIAL_BUILD_DURATION,
   cooldownDuration: INITIAL_COOLDOWN_DURATION,
   currentCurve: 'sine',
@@ -384,6 +384,7 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         rampFactor: 1.0,
         decisionEntryIntensity: 0,
         cooldownEntryIntensity: 0,
+        feelingLevel: 2,
       };
 
     case 'END_SESSION':
