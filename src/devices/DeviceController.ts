@@ -15,8 +15,7 @@ export interface DeviceController {
   /**
    * Upload and play a pre-computed PatternV2 block.
    * Only called when supportsPatternV2 is true.
-   * Always uses stopPrevious:0 for seamless transitions.
-   * To interrupt an active block, call stopPattern() first.
+   * Always uses stopPrevious:0 — firmware transitions seamlessly without a stop gap.
    */
   sendPatternBlock?(keyframes: PatternKeyframe[], durationMs: number, toyId?: string): Promise<void>;
 

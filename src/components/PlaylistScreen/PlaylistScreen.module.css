@@ -14,19 +14,17 @@
 }
 
 .backBtn {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  font-weight: 700;
-  font-size: 0.85rem;
-  padding: 0.5rem 1rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
   cursor: pointer;
-  transition: transform 0.1s;
+  padding: 0;
+  transition: color 0.15s;
 }
 
 .backBtn:hover {
-  transform: scale(1.05);
+  color: var(--text);
 }
 
 .title {

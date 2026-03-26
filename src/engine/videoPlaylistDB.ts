@@ -1,16 +1,16 @@
-/** IndexedDB persistence for the video playlist — stores blobs by category + name */
+/** IndexedDB persistence for the video playlist — stores file paths by category + name */
 
 import type { VideoCategory } from '../hooks/useVideoPlaylist.ts';
 
 const DB_NAME = 'pulse-playlist';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'videos';
 
 export interface StoredVideo {
   id: string;       // `${category}::${name}`
   category: VideoCategory;
   name: string;
-  blob: Blob;
+  path: string;     // absolute file path — Electron serves these as file:// URLs
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -18,9 +18,11 @@ function openDB(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = e => {
       const db = (e.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' });
+      // v1 stored blobs — drop and recreate clean for v2 (path-based)
+      if (db.objectStoreNames.contains(STORE)) {
+        db.deleteObjectStore(STORE);
       }
+      db.createObjectStore(STORE, { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

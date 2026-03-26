@@ -46,6 +46,44 @@
   letter-spacing: 0.1em;
 }
 
+.curveRating {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rateBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+
+.rateBtn:hover {
+  transform: scale(1.2);
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.rateBtnActive {
+  background: var(--gold);
+  color: #000;
+  border-color: var(--gold);
+  transform: scale(1.25);
+  transition: none;
+}
+
 .stats {
   display: flex;
   gap: 1.5rem;

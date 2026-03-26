@@ -1,8 +1,9 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { SessionState, SessionAction, ToyConfig } from '../../engine/sessionMachine.ts';
 import { PATTERN_LABELS } from '../../engine/toyPatterns.ts';
 import { getPresetsForToy, getPresetById } from '../../engine/patternPresets.ts';
+import type { ToyFunction } from '../../engine/toyCapabilities.ts';
 import type { PlaylistStore } from '../../hooks/useVideoPlaylist.ts';
 import { hasAnyVideos } from '../../hooks/useVideoPlaylist.ts';
 import { getEventRemainingMs } from '../../engine/randomEvents.ts';
@@ -13,6 +14,7 @@ import { EnergyEqualizer } from '../EnergyEqualizer/EnergyEqualizer.tsx';
 import { SessionBackground } from '../SessionBackground/SessionBackground.tsx';
 import { RadialGauge } from './RadialGauge.tsx';
 import styles from './SessionScreen.module.css';
+import { rateCurve } from '../../engine/curveRatings.ts';
 
 interface SessionScreenProps {
   state: SessionState;
@@ -24,6 +26,8 @@ interface SessionScreenProps {
   bpm: number;
   deviceErrors: Record<string, string>;
   deviceIntensities: Record<string, number>;
+  deviceAxisIntensities: Record<string, Partial<Record<ToyFunction, number>>>;
+  musicRef?: RefObject<HTMLAudioElement | null>;
 }
 
 const PHASE_COLORS: Record<string, string> = {
@@ -114,7 +118,12 @@ const PHASE_DURATION_ESTIMATE: Record<string, number> = {
   PAUSED: 60_000,
 };
 
-export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, analyserRef, bpm, deviceErrors, deviceIntensities }: SessionScreenProps) {
+const AXIS_ABBR: Record<string, string> = {
+  vibrate: 'vibe', vibrate2: 'vib2', rotate: 'rot', pump: 'pump',
+  depth: 'dpth', thump: 'thmp', oscillate: 'osc', contract: 'cont',
+};
+
+export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, analyserRef, bpm, deviceErrors, deviceIntensities, deviceAxisIntensities, musicRef }: SessionScreenProps) {
   const phaseColor = PHASE_COLORS[state.phase] ?? 'var(--text)';
   const eventRemaining = state.activeEvent
     ? getEventRemainingMs(state.activeEvent, state.elapsedMs)
@@ -122,6 +131,16 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, an
   const showVideo = state.viewMode === 'video' && hasAnyVideos(playlist);
   const isVideoMode = state.viewMode === 'video';
   const videoAvailable = hasAnyVideos(playlist);
+
+  const [ratingFlash, setRatingFlash] = useState<'up' | 'down' | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleRateCurve(direction: 1 | -1) {
+    rateCurve(state.currentCurve, direction);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    setRatingFlash(direction === 1 ? 'up' : 'down');
+    flashTimerRef.current = setTimeout(() => setRatingFlash(null), 600);
+  }
 
   // Beat key: increments on each rising edge of isBeat to force remount of ring element
   const beatKeyRef = useRef(0);
@@ -156,7 +175,23 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, an
             <span className={`${styles.phaseLabel}${showVideo ? ` ${styles.phaseLabelVideo}` : ''}${isBeat ? ` ${styles.phaseLabelBeat}` : ''}`} style={{ color: phaseColor }}>
               {getPhaseLabel(state)}
             </span>
-            {state.phase === 'BUILD' && <span className={styles.curveTag}>{state.currentCurve}</span>}
+            {state.phase === 'BUILD' && (
+              <div className={styles.curveRating}>
+                <span className={styles.curveTag}>{state.currentCurve}</span>
+                <button
+                  className={`${styles.rateBtn} ${ratingFlash === 'up' ? styles.rateBtnActive : ''}`}
+                  onClick={() => handleRateCurve(1)}
+                  aria-label="Like this curve"
+                  title="Like — curve appears more often"
+                >▲</button>
+                <button
+                  className={`${styles.rateBtn} ${ratingFlash === 'down' ? styles.rateBtnActive : ''}`}
+                  onClick={() => handleRateCurve(-1)}
+                  aria-label="Dislike this curve"
+                  title="Dislike — curve appears less often"
+                >▼</button>
+              </div>
+            )}
           </div>
           <div className={`${styles.stats}${showVideo ? ` ${styles.statsVideo}` : ''}`}>
             {/* View mode toggle */}
@@ -289,6 +324,7 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, an
           lastSplashId={state.splash?.id ?? null}
           isBeat={isBeat}
           paused={state.paused}
+          musicRef={musicRef}
         />
 
         {/* Feeling buttons + beg button inline */}
@@ -386,9 +422,16 @@ export function SessionScreen({ state, send, playlist, isBeat, bassEnergyRef, an
                     <span style={{ color: 'var(--text-muted)', flex: 1, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {tc.toy.nickName || tc.toy.name || tc.toy.type}
                     </span>
-                    <span style={{ fontWeight: 700, color: phaseColor, minWidth: '2rem', textAlign: 'right' }}>
-                      {deviceIntensities[key] ?? 0}
-                    </span>
+                    {deviceAxisIntensities[key]
+                      ? <span style={{ fontWeight: 700, color: phaseColor, fontSize: '0.72rem' }}>
+                          {Object.entries(deviceAxisIntensities[key]).map(([fn, lvl]) =>
+                            `${AXIS_ABBR[fn] ?? fn}:${lvl ?? 0}`
+                          ).join(' / ')}
+                        </span>
+                      : <span style={{ fontWeight: 700, color: phaseColor, minWidth: '2rem', textAlign: 'right' }}>
+                          {deviceIntensities[key] ?? 0}
+                        </span>
+                    }
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
                       🔋{tc.toy.battery}%
                     </span>

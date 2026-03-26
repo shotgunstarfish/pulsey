@@ -138,6 +138,8 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
   const desiredLevelRef = useRef<Map<string, number>>(new Map());
   /** Per-toy desired actions: key -> {ActionName: level} for multi-axis dispatch */
   const desiredActionsRef = useRef<Map<string, Record<string, number>>>(new Map());
+  /** Per-toy per-axis levels (ToyFunction -> 0-20) for multi-axis display */
+  const desiredAxisLevelsRef = useRef<Map<string, Partial<Record<ToyFunction, number>>>>(new Map());
   /** Last value actually sent per key + timestamp — avoids re-sending the same level */
   const lastSentRef = useRef<Map<string, { level: number; time: number }>>(new Map());
   const KEEPALIVE_MS = 5_000;
@@ -296,6 +298,7 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
     if (phase === 'IDLE') {
       desiredLevelRef.current.clear();
       desiredActionsRef.current.clear();
+      desiredAxisLevelsRef.current.clear();
       blockScheduleRef.current.clear();
       for (const controller of devicesRef.current.values()) {
         controller.stopPattern?.().catch(() => {});
@@ -466,6 +469,7 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
                   axisLevels[fn] = Math.round(patterned * axisCfg.intensityScale * tc.intensityScale);
                 }
                 desiredActionsRef.current.set(key, buildActionsMap(axisLevels));
+                desiredAxisLevelsRef.current.set(key, { ...axisLevels });
                 // Primary axis level for display + rate-limiting
                 const primaryLevel = axisLevels[caps[0]] ?? 0;
                 desired.set(key, deviceIntensity > 0 ? Math.max(1, primaryLevel) : primaryLevel);
@@ -478,6 +482,7 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
                 const raw = Math.round(patterned * axisScale * tc.intensityScale);
                 desired.set(key, deviceIntensity > 0 ? Math.max(1, raw) : raw);
                 desiredActionsRef.current.delete(key);
+                desiredAxisLevelsRef.current.delete(key);
               }
             }
           }
@@ -508,6 +513,12 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
                 }
               : null;
 
+            // Resolve pattern from preset (presetId is the source of truth; tc.pattern is legacy fallback)
+            const tcPreset = tc.presetId ? getPresetById(tc.presetId) : undefined;
+            const tcCaps = getCapabilities(tc.toy.type);
+            const tcAxisCfg = tcPreset?.axes[tcCaps[0] as ToyFunction];
+            const resolvedPattern = tcAxisCfg?.pattern ?? tc.pattern;
+
             const genParams: BlockGenParams = {
               phase:            s.phase,
               phaseElapsedMs:   s.phaseElapsedMs,
@@ -518,8 +529,8 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
               currentCurve:     s.currentCurve,
               currentIntensity: s.curveIntensity,
               activeEvent,
-              toyPattern:       tc.pattern,
-              intensityScale:   tc.intensityScale,
+              toyPattern:       resolvedPattern,
+              intensityScale:   (tcAxisCfg?.intensityScale ?? 1.0) * tc.intensityScale,
               bpm:              bpmRef.current,
             };
 
@@ -533,18 +544,14 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
               const block = generateBlock(genParams);
               blockScheduleRef.current.set(key, { current: block, next: null, startedAt: 0, sending: true });
 
-              // Stop the active block first (PatternV2 Stop halts firmware playback),
-              // then send the new block. stopPattern is a no-op if nothing is playing.
-              const wasPlaying = !!schedule?.current;
+              // Send the new block directly — stopPrevious:0 lets the firmware
+              // transition seamlessly without a stop gap.
               const doSend = () =>
                 (controller.sendPatternBlock as NonNullable<typeof controller.sendPatternBlock>)(
                   block.keyframes, block.durationMs, tc.toy.id,
                 );
 
-              (wasPlaying
-                ? controller.stopPattern!(tc.toy.id).catch(() => {}).then(doSend)
-                : doSend()
-              )
+              doSend()
                 .then(() => {
                   const sched = blockScheduleRef.current.get(key);
                   if (sched) {
@@ -683,5 +690,17 @@ export function useSessionEngine(isBeat: boolean = false, bpm: number = 0) {
     }
   }
 
-  return { state, send, deviceErrors, deviceIntensities };
+  const deviceAxisIntensities: Record<string, Partial<Record<ToyFunction, number>>> = {};
+  for (const slot of state.devices) {
+    if (slot.mode === 'mock') continue;
+    for (const tc of slot.toyConfigs) {
+      const key = toyKey(slot.id, tc.toy.id);
+      const axisLevels = desiredAxisLevelsRef.current.get(key);
+      if (axisLevels && Object.keys(axisLevels).length > 1) {
+        deviceAxisIntensities[key] = axisLevels;
+      }
+    }
+  }
+
+  return { state, send, deviceErrors, deviceIntensities, deviceAxisIntensities };
 }
