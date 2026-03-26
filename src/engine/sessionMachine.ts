@@ -6,6 +6,7 @@ import type { ToyPattern } from './toyPatterns.ts';
 export type { ToyPattern };
 import { defaultPatternForToyType } from './toyPatterns.ts';
 import { getDefaultPreset } from './patternPresets.ts';
+import { loadCurveRatings, pickWeightedCurve } from './curveRatings.ts';
 import type { RandomEvent } from './randomEvents.ts';
 import { shouldTriggerEvent, pickRandomEvent, isEventExpired } from './randomEvents.ts';
 
@@ -23,7 +24,8 @@ export type Phase =
   | 'RELEASE'
   | 'PAUSED'
   | 'HISTORY'
-  | 'PLAYLIST';
+  | 'PLAYLIST'
+  | 'PATTERN_LIBRARY';
 
 // ── Splash ──────────────────────────────────────────────
 
@@ -127,6 +129,7 @@ export type SessionAction =
   | { type: 'GO_HISTORY' }
   | { type: 'GO_IDLE' }
   | { type: 'GO_PLAYLIST' }
+  | { type: 'GO_PATTERN_LIBRARY' }
   | { type: 'SET_TOYS'; deviceId: string; toys: LovenseToy[] }
   | { type: 'SET_INPUT_MODE'; deviceId: string; inputMode: 'auto' | 'beat' }
   | { type: 'UPDATE_TOY_CONFIG'; deviceId: string; toyId: string; patch: Partial<Pick<ToyConfig, 'intensityScale' | 'inputMode' | 'enabled' | 'pattern' | 'presetId'>> }
@@ -190,12 +193,10 @@ const PLATEAU_DURATION = 30_000;          // 30s max at plateau before auto-adva
 const PLATEAU_OSCILLATION_PERIOD = 9_000; // 9s sine cycle at plateau
 
 // ── Curve selection ──────────────────────────────────────
-// Weighted: sine 50%, pulse 40%, linear 10% (linear is surprise-only)
-function nextCurve(_current: CurveType): CurveType {
-  const r = Math.random();
-  if (r < 0.5) return 'sine';
-  if (r < 0.9) return 'pulse';
-  return 'linear';
+// Base weights (sine 25%, staircase 17%, plateau 15%, pulse 20%, beat 15%, linear 8%)
+// adjusted by user ratings stored in localStorage.
+function nextCurve(current: CurveType): CurveType {
+  return pickWeightedCurve(loadCurveRatings(), current);
 }
 
 // ── Initial state ───────────────────────────────────────
@@ -264,6 +265,9 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
 
     case 'GO_PLAYLIST':
       return { ...state, phase: 'PLAYLIST' };
+
+    case 'GO_PATTERN_LIBRARY':
+      return { ...state, phase: 'PATTERN_LIBRARY' };
 
     case 'ADD_DEVICE':
       return {
@@ -819,22 +823,20 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
             return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed, intensity: 0 };
           }
 
-          // Auto-advance to EDGE_CHECK after PLATEAU_DURATION
+          // Plateau timed out without edge confirmation — go to cooldown.
+          // Edges are only counted when the user explicitly clicks 9.
           if (newPhaseElapsed >= PLATEAU_DURATION) {
-            const newEdgeCount = state.edgeCount + 1;
             return {
               ...state,
               elapsedMs: newElapsed,
               phaseElapsedMs: 0,
-              edgeCount: newEdgeCount,
-              phase: 'DECISION',
-              releaseRolled: false,
-              hasBeggedThisDecision: false,
-              begDenialTaunt: null,
-              intensity: Math.max(5, BUILD_CEILING - 5),
-              decisionEntryIntensity: Math.max(5, BUILD_CEILING - 5),
-              cooldownEntryIntensity: Math.max(5, BUILD_CEILING - 5),
-              splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
+              phase: 'COOLDOWN',
+              intensity: state.intensity,
+              cooldownEntryIntensity: state.intensity,
+              buildFloor: Math.min(state.buildFloor + 1, 12),
+              buildDuration: Math.max(20_000, state.buildDuration * 0.9),
+              cooldownDuration: state.edgeCount > 3 ? Math.max(8_000, state.cooldownDuration * 0.95) : state.cooldownDuration,
+              currentCurve: nextCurve(state.currentCurve),
             };
           }
 
@@ -846,22 +848,16 @@ function _sessionReducer(state: SessionState, action: SessionAction): SessionSta
         }
 
         case 'EDGE_CHECK': {
-          // Brief pause — auto-confirm edge after 5 seconds
+          // User entered EDGE_CHECK by clicking 9 but didn't re-confirm.
+          // After 5s, treat it as a back-out — no edge counted.
           if (newPhaseElapsed >= 5000) {
-            const newEdgeCount = state.edgeCount + 1;
             return {
               ...state,
               elapsedMs: newElapsed,
               phaseElapsedMs: 0,
-              edgeCount: newEdgeCount,
-              phase: 'DECISION',
-              releaseRolled: false,
-              hasBeggedThisDecision: false,
-              begDenialTaunt: null,
-              intensity: state.intensity,  // DECISION tick will decay smoothly
-              decisionEntryIntensity: state.intensity,
+              phase: 'COOLDOWN',
+              intensity: state.intensity,
               cooldownEntryIntensity: state.intensity,
-              splash: splash(pick(SPLASH_DICE_CONTINUE), 'purple'),
             };
           }
           return { ...state, elapsedMs: newElapsed, phaseElapsedMs: newPhaseElapsed };
@@ -964,6 +960,13 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
   // Beat nudge: only meaningful during active (non-paused) session phases
   if (action.type === 'BEAT_NUDGE') {
     if (state.paused || !SESSION_PHASES.has(state.phase)) return state;
+    // 'beat' curve in BUILD: spike +4 above the current linear-ramp baseline
+    if (state.currentCurve === 'beat' && state.phase === 'BUILD') {
+      const progress = Math.min(1, state.phaseElapsedMs / Math.max(1, state.buildDuration));
+      const linearNow = state.buildFloor + (BUILD_CEILING - state.buildFloor) * progress;
+      const kick = Math.min(4, BUILD_CEILING - linearNow);
+      return { ...state, beatBoost: Math.max(kick, 0) };
+    }
     return { ...state, beatBoost: Math.min(state.beatBoost + 3, 5) };
   }
 
@@ -973,7 +976,9 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
   if (action.type === 'TICK') {
     const curveIntensity = nextState.intensity;
     if (state.beatBoost > 0) {
-      const decayedBoost = Math.max(0, state.beatBoost - action.deltaMs * BEAT_BOOST_DECAY_RATE);
+      // 'beat' curve: fast decay so the +4 spike is a crisp pulse above the rising baseline
+      const beatDecayRate = state.currentCurve === 'beat' ? 1 / 15 : BEAT_BOOST_DECAY_RATE;
+      const decayedBoost = Math.max(0, state.beatBoost - action.deltaMs * beatDecayRate);
       return {
         ...nextState,
         curveIntensity,

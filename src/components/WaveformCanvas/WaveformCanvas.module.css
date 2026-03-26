@@ -1,0 +1,5 @@
+.canvas {
+  display: block;
+  border-radius: 6px;
+  background: var(--surface2, #1a1a2e);
+}

@@ -50,8 +50,8 @@ export class LovenseDevice implements DeviceController {
   /**
    * Upload and immediately play a pre-computed PatternV2 block using InitPlay.
    * Single HTTP call vs the two-step Setup→Play.
-   * Uses stopPrevious:0 — seamless transition at natural block boundaries.
-   * To interrupt an active block, call stopPattern() first, then this method.
+   * Uses stopPrevious:0 — firmware transitions seamlessly from any active block.
+   * No need to call stopPattern() first; the new block overwrites the previous one.
    * Requires Lovense Remote firmware v7.76.0+.
    */
   async sendPatternBlock(keyframes: PatternKeyframe[], durationMs: number, toyId?: string): Promise<void> {

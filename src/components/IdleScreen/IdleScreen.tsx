@@ -37,6 +37,12 @@ export function IdleScreen({ send }: IdleScreenProps) {
             >
               Playlist
             </button>
+            <button
+              className={styles.linkBtn}
+              onClick={() => send({ type: 'GO_PATTERN_LIBRARY' })}
+            >
+              Pattern Library
+            </button>
           </div>
         </div>
         <p className={styles.hint}>Press 1-9 during session to report feeling. 0 = stop. Space = pause.</p>

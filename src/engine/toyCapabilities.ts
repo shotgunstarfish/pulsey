@@ -100,6 +100,32 @@ export function isKnownToyType(toyType: string | null | undefined): boolean {
   return (toyType ?? '').toLowerCase() in TOY_CAPABILITIES;
 }
 
+export interface CapabilityGroup {
+  /** Sorted comma-joined capability key, e.g. "rotate,vibrate" */
+  key: string;
+  functions: ToyFunction[];
+  /** All toy model names that belong to this group */
+  toyTypes: string[];
+  /** Human-readable label, e.g. "Vibrate + Rotate" */
+  label: string;
+}
+
+/** Returns all capability groups with their toy memberships. */
+export function getAllCapabilityGroups(): CapabilityGroup[] {
+  const map = new Map<string, CapabilityGroup>();
+  for (const [toyType, fns] of Object.entries(TOY_CAPABILITIES)) {
+    const key = [...fns].sort().join(',');
+    if (!map.has(key)) {
+      const label = fns
+        .map(f => f.charAt(0).toUpperCase() + f.slice(1))
+        .join(' + ');
+      map.set(key, { key, functions: fns, toyTypes: [], label });
+    }
+    map.get(key)!.toyTypes.push(toyType);
+  }
+  return Array.from(map.values());
+}
+
 /**
  * Build a Lovense Function API action string from ToyFunction->level (0-20 scale) pairs.
  * Scales pump/depth from 0-20 to their hardware range internally.

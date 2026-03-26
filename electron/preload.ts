@@ -1,2 +1,5 @@
-// Minimal preload script with context isolation enabled.
-// No APIs are exposed to the renderer -- the app runs as a pure web app.
+import { contextBridge, webUtils } from 'electron'
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+})

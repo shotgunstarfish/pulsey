@@ -2,7 +2,7 @@
 
 export type PhaseGroup = 'warmup' | 'building' | 'teasing' | 'cooldown' | 'denied' | 'release';
 
-const MESSAGES: Record<PhaseGroup, readonly string[]> = {
+export const MESSAGES: Record<PhaseGroup, readonly string[]> = {
   warmup: [
     'settle in...',
     "we're just getting started",
@@ -139,7 +139,8 @@ export function getPhaseGroup(phase: string, intensity: number, feelingLevel: nu
   return 'building';
 }
 
-export function pickEncouragement(group: PhaseGroup): string {
+export function pickEncouragement(group: PhaseGroup): { text: string; audioSrc: string } {
   const pool = MESSAGES[group];
-  return pool[Math.floor(Math.random() * pool.length)];
+  const idx = Math.floor(Math.random() * pool.length);
+  return { text: pool[idx], audioSrc: `/taunts/${group}/${idx}.mp3` };
 }

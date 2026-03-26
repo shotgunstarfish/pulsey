@@ -43,6 +43,23 @@ export function HistoryScreen({ send }: HistoryScreenProps) {
         maxWidth: '640px',
         width: '100%',
       }}>
+        <button
+          onClick={() => send({ type: 'GO_IDLE' })}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-muted)',
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            padding: 0,
+            marginBottom: '0.5rem',
+            transition: 'color 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+        >
+          ← Back
+        </button>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>Session History</h2>
           {history.length > 0 && (
@@ -99,22 +116,6 @@ export function HistoryScreen({ send }: HistoryScreenProps) {
           </table>
         )}
 
-        <button
-          onClick={() => send({ type: 'GO_IDLE' })}
-          style={{
-            display: 'block',
-            margin: '2rem auto 0',
-            padding: '0.6rem 2rem',
-            background: 'var(--surface2)',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontSize: '0.9rem',
-          }}
-        >
-          Back
-        </button>
       </div>
     </div>
   );

@@ -704,6 +704,24 @@ export function SetupScreen({ state, send }: SetupScreenProps) {
           flex: 1,
           minWidth: 0,
         }}>
+          <button
+            onClick={() => send({ type: 'GO_IDLE' })}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              padding: 0,
+              marginBottom: '0.5rem',
+              display: 'block',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            ← Back
+          </button>
           <h2 style={{ margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 700 }}>
             Device Setup
           </h2>
@@ -733,22 +751,6 @@ export function SetupScreen({ state, send }: SetupScreenProps) {
             + Add Device
           </button>
 
-          <button
-            onClick={() => send({ type: 'GO_IDLE' })}
-            style={{
-              display: 'block',
-              margin: '2rem auto 0',
-              padding: '0.6rem 2rem',
-              background: 'var(--surface2)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-            }}
-          >
-            Back
-          </button>
         </div>
 
         {/* Right — setup guide */}

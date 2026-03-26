@@ -34,7 +34,8 @@ export function useKeyboardInput(
           phase !== 'IDLE' &&
           phase !== 'SETUP' &&
           phase !== 'HISTORY' &&
-          phase !== 'PLAYLIST'
+          phase !== 'PLAYLIST' &&
+          phase !== 'PATTERN_LIBRARY'
         ) {
           send({ type: 'PAUSE' });
         }

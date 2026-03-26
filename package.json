@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "vite",
-    "electron:build": "tsc -b && vite build && electron-builder --config electron-builder.yml"
+    "electron:build": "tsc -b && vite build && electron-builder --config electron-builder.yml",
+    "generate:taunts": "node --experimental-strip-types scripts/generate-taunts.ts"
   },
   "dependencies": {
     "react": "^19.2.4",

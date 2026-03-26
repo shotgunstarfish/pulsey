@@ -9,10 +9,11 @@ import { SetupScreen } from './components/SetupScreen/SetupScreen.tsx';
 import { SessionScreen } from './components/SessionScreen/SessionScreen.tsx';
 import { HistoryScreen } from './components/HistoryScreen/HistoryScreen.tsx';
 import { PlaylistScreen } from './components/PlaylistScreen/PlaylistScreen.tsx';
+import { PatternLibraryScreen } from './components/PatternLibrary/PatternLibraryScreen.tsx';
 
 export default function App() {
   const music = useBeatDetection();
-  const { state, send, deviceErrors, deviceIntensities } = useSessionEngine(music.isBeat, music.bpm);
+  const { state, send, deviceErrors, deviceIntensities, deviceAxisIntensities } = useSessionEngine(music.isBeat, music.bpm);
   const { playlist, addFiles, removeFile, moveFile, clearCategory, clearAll } = useVideoPlaylist();
 
   // Wrap send so EMERGENCY_STOP fades out music before halting
@@ -46,6 +47,8 @@ export default function App() {
         return <SetupScreen state={state} send={wrappedSend} />;
       case 'HISTORY':
         return <HistoryScreen send={wrappedSend} />;
+      case 'PATTERN_LIBRARY':
+        return <PatternLibraryScreen send={wrappedSend} devices={state.devices} />;
       case 'PLAYLIST':
         return (
           <PlaylistScreen
@@ -71,6 +74,8 @@ export default function App() {
             bpm={music.bpm}
             deviceErrors={deviceErrors}
             deviceIntensities={deviceIntensities}
+            deviceAxisIntensities={deviceAxisIntensities}
+            musicRef={music.audioRef}
           />
         );
     }

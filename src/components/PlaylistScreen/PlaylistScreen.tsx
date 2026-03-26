@@ -46,7 +46,7 @@ export function PlaylistScreen({
     <div className={styles.container}>
       <div className={styles.header}>
         <button className={styles.backBtn} onClick={() => send({ type: 'GO_IDLE' })}>
-          Back
+          ← Back
         </button>
         <h1 className={styles.title}>PLAYLIST</h1>
         {totalVideos > 0 && (

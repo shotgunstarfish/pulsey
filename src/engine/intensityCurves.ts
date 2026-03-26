@@ -46,8 +46,8 @@ export function pulseTrain(
   ceiling: number,
 ): number {
   const progress = Math.min(1, elapsedMs / durationMs);
-  // Frequency increases from 0.5 Hz to 4 Hz over duration
-  const frequency = 0.5 + progress * 3.5;
+  // Frequency increases from 0.5 Hz to 2 Hz over duration (cap keeps toy in range)
+  const frequency = 0.5 + progress * 1.5;
   const dutyCycle = 0.3 + progress * 0.5; // 30% → 80%
   const cyclePosition = (elapsedMs / 1000 * frequency) % 1;
   return clampIntensity(cyclePosition < dutyCycle ? ceiling : floor);
@@ -66,7 +66,44 @@ export function cooldownPulseRaw(elapsedMs: number, durationMs: number): number 
   return Math.max(1, Math.min(6, 3 + primary + secondary));
 }
 
-export type CurveType = 'sine' | 'linear' | 'pulse';
+/**
+ * Staircase: 5 discrete steps across the build duration with holds between jumps.
+ */
+export function staircaseRamp(
+  elapsedMs: number,
+  durationMs: number,
+  floor: number,
+  ceiling: number,
+): number {
+  const progress = Math.min(1, elapsedMs / durationMs);
+  // 5 holds at equal time slices: floor → 25% → 50% → 75% → ceiling
+  const step = Math.min(4, Math.floor(progress * 5));
+  return clampIntensity(floor + (ceiling - floor) * step / 4);
+}
+
+/**
+ * Plateau: rises quickly to ceiling (first 25%), holds there (middle 50%),
+ * then descends back to floor (last 25%).
+ */
+export function plateauRamp(
+  elapsedMs: number,
+  durationMs: number,
+  floor: number,
+  ceiling: number,
+): number {
+  const progress = Math.min(1, elapsedMs / durationMs);
+  let value: number;
+  if (progress < 0.25) {
+    value = floor + (ceiling - floor) * (progress / 0.25);
+  } else if (progress < 0.75) {
+    value = ceiling;
+  } else {
+    value = ceiling - (ceiling - floor) * ((progress - 0.75) / 0.25);
+  }
+  return clampIntensity(value);
+}
+
+export type CurveType = 'sine' | 'linear' | 'pulse' | 'beat' | 'staircase' | 'plateau';
 
 export function computeIntensity(
   curve: CurveType,
@@ -82,6 +119,13 @@ export function computeIntensity(
       return linearRamp(elapsedMs, durationMs, floor, ceiling);
     case 'pulse':
       return pulseTrain(elapsedMs, durationMs, floor, ceiling);
+    case 'beat':
+      // Baseline follows linear ramp so display animates; BEAT_NUDGE spikes above it.
+      return linearRamp(elapsedMs, durationMs, floor, ceiling);
+    case 'staircase':
+      return staircaseRamp(elapsedMs, durationMs, floor, ceiling);
+    case 'plateau':
+      return plateauRamp(elapsedMs, durationMs, floor, ceiling);
   }
 }
 
@@ -113,10 +157,30 @@ export function computeIntensityRaw(
     }
     case 'pulse': {
       const progress = Math.min(1, elapsedMs / durationMs);
-      const frequency = 0.5 + progress * 3.5;
+      const frequency = 0.5 + progress * 1.5;
       const dutyCycle = 0.3 + progress * 0.5;
       const cyclePosition = (elapsedMs / 1000 * frequency) % 1;
       return clampF(cyclePosition < dutyCycle ? ceiling : floor);
+    }
+    case 'beat': {
+      // PatternV2 blocks can't sync to future beats; use linear as approximation.
+      const progress = Math.min(1, elapsedMs / durationMs);
+      return clampF(floor + (ceiling - floor) * progress);
+    }
+    case 'staircase': {
+      const progress = Math.min(1, elapsedMs / durationMs);
+      const step = Math.min(4, Math.floor(progress * 5));
+      return clampF(floor + (ceiling - floor) * step / 4);
+    }
+    case 'plateau': {
+      const progress = Math.min(1, elapsedMs / durationMs);
+      if (progress < 0.25) {
+        return clampF(floor + (ceiling - floor) * (progress / 0.25));
+      } else if (progress < 0.75) {
+        return clampF(ceiling);
+      } else {
+        return clampF(ceiling - (ceiling - floor) * ((progress - 0.75) / 0.25));
+      }
     }
   }
 }

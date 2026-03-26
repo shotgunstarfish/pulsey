@@ -39,7 +39,7 @@ const VIBE_PRESETS: PatternPreset[] = [
   {
     id: 'vibe-complement',
     name: 'Complement',
-    description: 'Inverted — high when global is low',
+    description: 'Phase-shifted wave — interleaves with other axes',
     forFunctions: ['vibrate'],
     axes: { vibrate: axis('complement') },
   },
@@ -63,6 +63,41 @@ const VIBE_PRESETS: PatternPreset[] = [
     description: 'Smooth undulation over the global curve',
     forFunctions: ['vibrate'],
     axes: { vibrate: axis('wave') },
+  },
+  {
+    id: 'vibe-stutter',
+    name: 'Stutter',
+    description: 'Irregular micro-interruptions that prevent habituation',
+    forFunctions: ['vibrate'],
+    axes: { vibrate: axis('stutter') },
+  },
+  {
+    id: 'vibe-heartbeat',
+    name: 'Heartbeat',
+    description: 'Lub-dub rhythm that accelerates with intensity',
+    forFunctions: ['vibrate'],
+    axes: { vibrate: axis('heartbeat') },
+  },
+  {
+    id: 'vibe-bracket',
+    name: 'Bracket',
+    description: 'Rapid oscillation near current intensity on a 600ms cycle',
+    forFunctions: ['vibrate'],
+    axes: { vibrate: axis('bracket') },
+  },
+  {
+    id: 'vibe-tidal',
+    name: 'Tidal',
+    description: 'Very slow 14-second swell with wide intensity range',
+    forFunctions: ['vibrate'],
+    axes: { vibrate: axis('tidal') },
+  },
+  {
+    id: 'vibe-deeptissue',
+    name: 'Deep Tissue',
+    description: 'Self-warming p-spot pattern — gentle ramp over 15 min, slow organic drift',
+    forFunctions: ['vibrate'],
+    axes: { vibrate: axis('deeptissue') },
   },
 ];
 
@@ -112,7 +147,7 @@ const NORA_PRESETS: PatternPreset[] = [
   {
     id: 'nora-counter',
     name: 'Counter',
-    description: 'Vibrate direct, rotate complement — alternating',
+    description: 'Vibrate and rotate interleave — peaks offset by half cycle',
     forFunctions: ['rotate', 'vibrate'],
     axes: { vibrate: axis('direct'), rotate: axis('complement') },
   },
@@ -122,6 +157,20 @@ const NORA_PRESETS: PatternPreset[] = [
     description: 'Wave vibration with phased rumble rotation',
     forFunctions: ['rotate', 'vibrate'],
     axes: { vibrate: axis('wave'), rotate: axis('rumble', 1.0, 2000) },
+  },
+  {
+    id: 'nora-anchor',
+    name: 'Anchor',
+    description: 'Steady rumble rotation as a base; stutter vibration on top',
+    forFunctions: ['rotate', 'vibrate'],
+    axes: { rotate: axis('rumble', 0.7), vibrate: axis('stutter') },
+  },
+  {
+    id: 'nora-grip',
+    name: 'Grip',
+    description: 'Rotation and vibration share the same 8s grip rhythm — rotation peaks with vibe. Time-gated warm-up over 12 min.',
+    forFunctions: ['rotate', 'vibrate'],
+    axes: { rotate: axis('grip'), vibrate: axis('grip') },
   },
 ];
 
@@ -138,7 +187,7 @@ const DUAL_PRESETS: PatternPreset[] = [
   {
     id: 'dual-split',
     name: 'Split',
-    description: 'Motor 1 direct, motor 2 complement',
+    description: 'Motors interleave — one peaks while the other troughs',
     forFunctions: ['vibrate', 'vibrate2'],
     axes: { vibrate: axis('direct'), vibrate2: axis('complement') },
   },
@@ -155,6 +204,20 @@ const DUAL_PRESETS: PatternPreset[] = [
     description: 'Both motors rumble together',
     forFunctions: ['vibrate', 'vibrate2'],
     axes: { vibrate: axis('rumble'), vibrate2: axis('rumble') },
+  },
+  {
+    id: 'dual-cascade',
+    name: 'Cascade',
+    description: 'Both motors wave with staggered phase — energy flows between them',
+    forFunctions: ['vibrate', 'vibrate2'],
+    axes: { vibrate: axis('wave'), vibrate2: axis('wave', 1.0, 6000) },
+  },
+  {
+    id: 'dual-grip',
+    name: 'Grip',
+    description: 'Motor 1 holds steady while motor 2 pulses against it',
+    forFunctions: ['vibrate', 'vibrate2'],
+    axes: { vibrate: axis('direct'), vibrate2: axis('pulse') },
   },
 ];
 
@@ -181,6 +244,20 @@ const MAX_PRESETS: PatternPreset[] = [
     description: 'Wave vibration with rumble pump',
     forFunctions: ['pump', 'vibrate'],
     axes: { vibrate: axis('wave'), pump: axis('rumble') },
+  },
+  {
+    id: 'max-edge-pump',
+    name: 'Edge Pump',
+    description: 'Bracket vibration holds near edge; pump pulses against it',
+    forFunctions: ['pump', 'vibrate'],
+    axes: { vibrate: axis('bracket'), pump: axis('pulse', 0.6) },
+  },
+  {
+    id: 'max-tighten',
+    name: 'Tighten',
+    description: 'Pump and vibe share the same 8s grip rhythm — tightest squeeze = peak vibration. Time-gated warm-up over 12 min.',
+    forFunctions: ['pump', 'vibrate'],
+    axes: { pump: axis('grip'), vibrate: axis('grip') },
   },
 ];
 
@@ -253,6 +330,13 @@ const TENERA_PRESETS: PatternPreset[] = [
     forFunctions: ['suction', 'vibrate'],
     axes: { suction: axis('rumble'), vibrate: axis('complement') },
   },
+  {
+    id: 'tenera-grip',
+    name: 'Grip',
+    description: 'Suction and vibe share the same 8s grip rhythm — suction peaks with vibration. Time-gated warm-up over 12 min.',
+    forFunctions: ['suction', 'vibrate'],
+    axes: { suction: axis('grip'), vibrate: axis('grip') },
+  },
 ];
 
 // ── Solace (depth + oscillate) ────────────────────────────────────────────
@@ -307,6 +391,16 @@ for (const preset of ALL_PRESETS) {
   }
 }
 
+/** Canonical key for a sorted function list (exported for Pattern Library). */
+export function capabilityKey(caps: ToyFunction[]): string {
+  return capsKey(caps);
+}
+
+/** Returns all preset groups indexed by capability key. */
+export function getAllPresetGroups(): Map<string, PatternPreset[]> {
+  return new Map(PRESETS_BY_CAPS);
+}
+
 /** Get all presets that match a toy's capability class. */
 export function getPresetsForToy(toyType: string | null | undefined): PatternPreset[] {
   const caps = getCapabilities(toyType);
@@ -333,7 +427,7 @@ export function getDefaultPreset(toyType: string | null | undefined): PatternPre
       return PRESET_BY_ID.get('dual-split')!;
     case 'max':
     case 'max2':
-      return PRESET_BY_ID.get('max-squeeze')!;
+      return PRESET_BY_ID.get('max-tighten')!;
     case 'osci':
     case 'osci2':
     case 'osci3':
@@ -351,12 +445,14 @@ export function getDefaultPreset(toyType: string | null | undefined): PatternPre
       return PRESET_BY_ID.get('solace-wave')!;
     case 'hush':
     case 'hush2':
-      return PRESET_BY_ID.get('vibe-rumble')!;
+      return PRESET_BY_ID.get('vibe-deeptissue')!;
     case 'lush':
     case 'lush2':
     case 'lush3':
     case 'lush4':
       return PRESET_BY_ID.get('vibe-direct')!;
+    case 'diamo':
+      return PRESET_BY_ID.get('vibe-complement')!;
     case 'domi':
     case 'domi2':
     case 'ferri':

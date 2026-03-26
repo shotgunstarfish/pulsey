@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { RefObject } from 'react';
 import { getPhaseGroup, pickEncouragement } from '../../engine/encouragementText.ts';
 import type { PhaseGroup } from '../../engine/encouragementText.ts';
 import styles from './EncouragementDisplay.module.css';
@@ -10,6 +11,7 @@ interface EncouragementDisplayProps {
   lastSplashId: string | null;
   isBeat?: boolean;
   paused?: boolean;
+  musicRef?: RefObject<HTMLAudioElement | null>;
 }
 
 const ROTATION_INTERVAL = 12_000;
@@ -34,7 +36,59 @@ const GROUP_GLOW: Record<PhaseGroup, string> = {
   release:  '0 0 22px rgba(255,215,0,0.55)',
 };
 
-export function EncouragementDisplay({ phase, intensity, feelingLevel, isBeat = false, paused = false }: EncouragementDisplayProps) {
+const TAUNT_GAIN = 1.2;
+
+function playTaunt(audioSrc: string, musicRef?: RefObject<HTMLAudioElement | null>) {
+  // Prepend BASE_URL so paths work in both dev (/) and production Electron (./)
+  const src = import.meta.env.BASE_URL.replace(/\/$/, '') + audioSrc;
+  const audio = new Audio(src);
+
+  // Route through Web Audio GainNode so we can exceed the 1.0 volume cap
+  const ctx = new AudioContext();
+  const source = ctx.createMediaElementSource(audio);
+  const gain = ctx.createGain();
+  gain.gain.value = TAUNT_GAIN;
+  source.connect(gain);
+  gain.connect(ctx.destination);
+
+  // Duck music under the taunt
+  const music = musicRef?.current;
+  const originalVol = music ? music.volume : 0;
+  if (music && originalVol > 0) {
+    const DUCK_TO = 0.04;
+    const STEPS = 10;
+    const MS = 20; // 200ms fade down
+    let step = 0;
+    const down = setInterval(() => {
+      if (!music) { clearInterval(down); return; }
+      step++;
+      music.volume = Math.max(originalVol - (originalVol - DUCK_TO) * (step / STEPS), DUCK_TO);
+      if (step >= STEPS) clearInterval(down);
+    }, MS);
+  }
+
+  audio.addEventListener('ended', () => {
+    ctx.close();
+    if (!music || originalVol <= 0) return;
+    // Restore music over 500ms
+    const STEPS = 20;
+    const MS = 25;
+    let step = 0;
+    const start = music.volume;
+    const up = setInterval(() => {
+      step++;
+      music.volume = Math.min(start + (originalVol - start) * (step / STEPS), originalVol);
+      if (step >= STEPS) clearInterval(up);
+    }, MS);
+  });
+
+  ctx.resume().then(() => audio.play()).catch(() => {
+    ctx.close();
+    if (music) music.volume = originalVol; // restore on failure
+  });
+}
+
+export function EncouragementDisplay({ phase, intensity, feelingLevel, isBeat = false, paused = false, musicRef }: EncouragementDisplayProps) {
   const [message, setMessage]     = useState('');
   const [visible, setVisible]     = useState(true);
   const [typedText, setTypedText] = useState('');
@@ -55,7 +109,9 @@ export function EncouragementDisplay({ phase, intensity, feelingLevel, isBeat = 
     const group = getPhaseGroup(phaseRef.current, intensityRef.current, feelingRef.current);
     setVisible(false);
     fadeTimerRef.current = setTimeout(() => {
-      setMessage(pickEncouragement(group));
+      const picked = pickEncouragement(group);
+      setMessage(picked.text);
+      playTaunt(picked.audioSrc, musicRef);
       setVisible(true);
     }, FADE_DURATION);
   }, []);
@@ -67,7 +123,7 @@ export function EncouragementDisplay({ phase, intensity, feelingLevel, isBeat = 
 
   useEffect(() => {
     const group = getPhaseGroup(phase, intensity, feelingLevel);
-    setMessage(pickEncouragement(group));
+    setMessage(pickEncouragement(group).text);
     setVisible(true);
     startInterval();
     return () => {
@@ -92,7 +148,9 @@ export function EncouragementDisplay({ phase, intensity, feelingLevel, isBeat = 
     prevPhaseRef.current = phase;
     if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
     const group = getPhaseGroup(phase, intensityRef.current, feelingRef.current);
-    setMessage(pickEncouragement(group));
+    const picked = pickEncouragement(group);
+    setMessage(picked.text);
+    playTaunt(picked.audioSrc, musicRef);
     setVisible(true);
     startInterval();
   }, [phase, startInterval]);
