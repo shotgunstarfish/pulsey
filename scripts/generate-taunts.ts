@@ -17,7 +17,17 @@ import { MESSAGES } from '../src/engine/encouragementText.ts';
 const FFMPEG = process.env.FFMPEG_PATH ?? 'E:\\tools\\ffmpeg\\bin\\ffmpeg.exe';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PUBLIC_DIR = join(__dirname, '..', 'public', 'taunts');
+
+// --voice <Name>   selects the DashScope voice (default: Momo)
+// --model <name>   overrides the TTS model (default: qwen3-tts-instruct-flash)
+const voiceArgIdx = process.argv.indexOf('--voice');
+const VOICE       = voiceArgIdx >= 0 ? (process.argv[voiceArgIdx + 1] ?? 'Momo') : 'Momo';
+const VOICE_DIR   = VOICE.toLowerCase();
+
+const modelArgIdx = process.argv.indexOf('--model');
+const MODEL_ARG   = modelArgIdx >= 0 ? (process.argv[modelArgIdx + 1] ?? '') : '';
+
+const PUBLIC_DIR = join(__dirname, '..', 'public', 'taunts', VOICE_DIR);
 const FORCE      = process.argv.includes('--force');
 
 const API_KEY = process.env.DASHSCOPE_API_KEY;
@@ -26,9 +36,10 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const API_URL      = 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
-const VOICE        = 'Momo';
-const MODEL        = 'qwen3-tts-instruct-flash';
+const API_URL    = 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
+const MODEL      = MODEL_ARG || 'qwen3-tts-instruct-flash';
+// instructions only supported on instruct-variant models
+const IS_INSTRUCT  = MODEL.includes('instruct');
 const INSTRUCTIONS = 'Speak with a teasing, sarcastic, encouraging tone — like someone who is rooting for you ' +
                      'but also enjoying watching you struggle. Playful cruelty. Confident and amused. ' +
                      'Short phrases land with weight. Never shout, but never boring. ' +
@@ -45,7 +56,12 @@ async function generateOne(text: string, outputPath: string): Promise<void> {
     },
     body: JSON.stringify({
       model: MODEL,
-      input: { text, voice: VOICE, language_type: 'English', instructions: INSTRUCTIONS },
+      input: {
+        text,
+        voice: VOICE,
+        language_type: 'English',
+        ...(IS_INSTRUCT ? { instructions: INSTRUCTIONS } : {}),
+      },
     }),
   });
 
@@ -79,6 +95,7 @@ async function generateOne(text: string, outputPath: string): Promise<void> {
 }
 
 async function main() {
+  console.log(`Voice: ${VOICE}  Model: ${MODEL}  →  public/taunts/${VOICE_DIR}/`);
   let total = 0, skipped = 0, failed = 0;
 
   for (const [group, texts] of Object.entries(MESSAGES)) {

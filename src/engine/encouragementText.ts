@@ -108,6 +108,7 @@ export const MESSAGES: Record<PhaseGroup, readonly string[]> = {
     "i processed your request. the result is no.",
     "null. try again.",
     "error 451: access forbidden for reasons you already know.",
+    "counting you down: 3... 2... 1... just kidding. you're not done yet.",
   ],
   release: [
     'finally',
@@ -139,8 +140,25 @@ export function getPhaseGroup(phase: string, intensity: number, feelingLevel: nu
   return 'building';
 }
 
-export function pickEncouragement(group: PhaseGroup): { text: string; audioSrc: string } {
+const shuffleBags = new Map<PhaseGroup, number[]>();
+
+function nextShuffledIdx(group: PhaseGroup): number {
   const pool = MESSAGES[group];
-  const idx = Math.floor(Math.random() * pool.length);
-  return { text: pool[idx], audioSrc: `/taunts/${group}/${idx}.mp3` };
+  let bag = shuffleBags.get(group);
+  if (!bag || bag.length === 0) {
+    bag = Array.from({ length: pool.length }, (_, i) => i);
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+    shuffleBags.set(group, bag);
+  }
+  return bag.pop()!;
+}
+
+export function pickEncouragement(group: PhaseGroup, voice: string): { text: string; audioSrc: string | null } {
+  const idx = nextShuffledIdx(group);
+  const pool = MESSAGES[group];
+  const audioSrc = voice === 'none' ? null : `/taunts/${voice}/${group}/${idx}.mp3`;
+  return { text: pool[idx], audioSrc };
 }
