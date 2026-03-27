@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { RefObject } from 'react';
 import { getPhaseGroup, pickEncouragement } from '../../engine/encouragementText.ts';
 import type { PhaseGroup } from '../../engine/encouragementText.ts';
+import { loadVoiceProfile } from '../../engine/voiceProfile.ts';
 import styles from './EncouragementDisplay.module.css';
 
 interface EncouragementDisplayProps {
@@ -55,7 +56,7 @@ function playTaunt(audioSrc: string, musicRef?: RefObject<HTMLAudioElement | nul
   const music = musicRef?.current;
   const originalVol = music ? music.volume : 0;
   if (music && originalVol > 0) {
-    const DUCK_TO = 0.04;
+    const DUCK_TO = 0.25;
     const STEPS = 10;
     const MS = 20; // 200ms fade down
     let step = 0;
@@ -109,9 +110,9 @@ export function EncouragementDisplay({ phase, intensity, feelingLevel, isBeat = 
     const group = getPhaseGroup(phaseRef.current, intensityRef.current, feelingRef.current);
     setVisible(false);
     fadeTimerRef.current = setTimeout(() => {
-      const picked = pickEncouragement(group);
+      const picked = pickEncouragement(group, loadVoiceProfile());
       setMessage(picked.text);
-      playTaunt(picked.audioSrc, musicRef);
+      if (picked.audioSrc) playTaunt(picked.audioSrc, musicRef);
       setVisible(true);
     }, FADE_DURATION);
   }, []);
@@ -123,7 +124,7 @@ export function EncouragementDisplay({ phase, intensity, feelingLevel, isBeat = 
 
   useEffect(() => {
     const group = getPhaseGroup(phase, intensity, feelingLevel);
-    setMessage(pickEncouragement(group).text);
+    setMessage(pickEncouragement(group, loadVoiceProfile()).text);
     setVisible(true);
     startInterval();
     return () => {
@@ -148,9 +149,9 @@ export function EncouragementDisplay({ phase, intensity, feelingLevel, isBeat = 
     prevPhaseRef.current = phase;
     if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
     const group = getPhaseGroup(phase, intensityRef.current, feelingRef.current);
-    const picked = pickEncouragement(group);
+    const picked = pickEncouragement(group, loadVoiceProfile());
     setMessage(picked.text);
-    playTaunt(picked.audioSrc, musicRef);
+    if (picked.audioSrc) playTaunt(picked.audioSrc, musicRef);
     setVisible(true);
     startInterval();
   }, [phase, startInterval]);

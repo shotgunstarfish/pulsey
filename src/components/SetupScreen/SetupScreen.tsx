@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { SessionAction, SessionState, DeviceSlot, LovenseToy } from '../../engine/sessionMachine.ts';
+import { VOICE_PROFILES, loadVoiceProfile, saveVoiceProfile } from '../../engine/voiceProfile.ts';
+import type { VoiceProfile } from '../../engine/voiceProfile.ts';
 import { PATTERN_LABELS } from '../../engine/toyPatterns.ts';
 import { getPresetsForToy, getPresetById } from '../../engine/patternPresets.ts';
 import { getCapabilities, isKnownToyType } from '../../engine/toyCapabilities.ts';
@@ -521,6 +523,69 @@ function DeviceCard({ slot, canRemove, send }: DeviceCardProps) {
   );
 }
 
+// ─── Voice Profile picker ─────────────────────────────────────────────────────
+
+function VoiceProfilePicker() {
+  const [voice, setVoice] = useState<VoiceProfile>(loadVoiceProfile);
+
+  function pick(v: VoiceProfile) {
+    setVoice(v);
+    saveVoiceProfile(v);
+  }
+
+  return (
+    <div style={{
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderRadius: '16px',
+      padding: '2rem 2.5rem',
+      flex: 1,
+      minWidth: 0,
+    }}>
+      <h2 style={{ margin: '0 0 0.4rem', fontSize: '1.2rem', fontWeight: 700 }}>
+        Voice Profile
+      </h2>
+      <p style={{ margin: '0 0 1rem', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        Selects which pre-generated voice is used for audio taunts during sessions.
+        Run <code style={{ background: 'var(--surface2)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontSize: '0.75rem' }}>
+          npm run generate:taunts -- --voice {'{Name}'}
+        </code> to generate files for a voice.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+        {VOICE_PROFILES.map(v => (
+          <button
+            key={v.id}
+            onClick={() => pick(v.id)}
+            title={v.description}
+            style={{
+              padding: '0.45rem 1rem',
+              background: voice === v.id ? 'var(--purple)' : 'var(--surface2)',
+              color: voice === v.id ? '#fff' : 'var(--text-muted)',
+              border: `1px solid ${voice === v.id ? 'var(--purple)' : 'var(--border)'}`,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: voice === v.id ? 700 : 500,
+              fontSize: '0.85rem',
+              transition: 'all 0.12s',
+            }}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+      {voice !== 'none' && (
+        <p style={{ margin: '0.75rem 0 0', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+          {VOICE_PROFILES.find(v => v.id === voice)?.description}
+          {' — files expected at '}
+          <code style={{ background: 'var(--surface2)', padding: '0.1rem 0.3rem', borderRadius: '4px' }}>
+            public/taunts/{voice}/
+          </code>
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Setup Guide panel ────────────────────────────────────────────────────────
 
 const STEPS = [
@@ -695,14 +760,13 @@ export function SetupScreen({ state, send }: SetupScreenProps) {
         width: '100%',
         maxWidth: '900px',
       }}>
-        {/* Left — device cards */}
+        {/* Left column — device cards + voice */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', flex: 1, minWidth: 0 }}>
         <div style={{
           background: 'var(--surface)',
           border: '1px solid var(--border)',
           borderRadius: '16px',
           padding: '2.5rem 3rem',
-          flex: 1,
-          minWidth: 0,
         }}>
           <button
             onClick={() => send({ type: 'GO_IDLE' })}
@@ -752,6 +816,8 @@ export function SetupScreen({ state, send }: SetupScreenProps) {
           </button>
 
         </div>
+        <VoiceProfilePicker />
+        </div>{/* end left column */}
 
         {/* Right — setup guide */}
         <SetupGuide />
